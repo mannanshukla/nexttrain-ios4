@@ -1,0 +1,27 @@
+# Next Train
+
+Caltrain, BART and Muni for iPod touch 4. Bundled Caltrain timetable, live times from 511 and BART, a trip planner you can type a sentence into, a line map, and a Laya verdict on whether to run for it.
+
+## Layout
+
+- `tools/compact_gtfs.py` turns the public Caltrain GTFS feed into `res/caltrain.json`. Rerun it when the timetable changes.
+- `res/bart.json` is the BART station list, `res/muni_stops.json` the Muni stop names from 511.
+- `src/CTData` is the timetable engine, `CTLive` the 511 client, `CTAgencies` the BART and Muni clients, `CTAI` the OpenRelay and Laya calls.
+- Real-time needs a free token from 511.org; 60 requests per hour. BART needs nothing.
+
+A fan project, not affiliated with Caltrain, BART, SFMTA or MTC. The agency marks identify the services.
+
+## Building
+
+Targets iOS 4.3 on armv7 from a modern Mac with only the Command Line Tools installed. No Xcode.
+
+1. Get the iPhoneOS 4.3 SDK from [EachAndOther/Legacy-iOS-SDKs](https://github.com/EachAndOther/Legacy-iOS-SDKs) into `~/ios4sdk/iPhoneOS4.3.sdk`.
+2. The modern linker refuses the old dylibs, so convert them to text stubs once: run `tapi stubify` from the Command Line Tools over the SDK's frameworks and retarget the `-darwin` platform strings to `-ios`.
+3. `./build.sh` compiles with `clang -target armv7-apple-ios4.3 -fobjc-runtime=ios-4.3 -fno-objc-arc -marm`, pseudo-signs with `ldid -S`, and zips an IPA into `build/`. ARM mode matters: modern ld drops the Thumb bit on Objective-C method pointers for this target and the app crashes at launch without it.
+4. Install on a jailbroken device with AppSync: `ideviceinstaller install build/<App>.ipa`.
+
+Everything is hand-written Foundation and UIKit from 2011. The JSON parser is in `src/ORJSON.m` because iOS 4 has no NSJSONSerialization.
+
+## License
+
+MIT for the code. Third-party marks and data belong to their owners.
