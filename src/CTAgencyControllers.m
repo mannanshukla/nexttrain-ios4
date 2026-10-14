@@ -1,4 +1,5 @@
 #import "CTAgencyControllers.h"
+#import "CTMap.h"
 #import "CTAgencies.h"
 #import "CTData.h"
 #import "CTViews.h"
@@ -50,6 +51,10 @@ static UILabel *footer(UITableView *tv) {
     }
     return self;
 }
+- (id)initWithStation:(NSString *)abbr {
+    if ((self = [self init])) { pinned = YES; [station release]; station = [abbr copy]; self.navigationItem.titleView = nil; self.title = [self stationName]; self.navigationItem.rightBarButtonItem = nil; self.hidesBottomBarWhenPushed = YES; }
+    return self;
+}
 - (void)dealloc { [timer invalidate]; [station release]; [deps release]; [status release]; [advisories release]; [stationButton release]; [super dealloc]; }
 - (NSString *)stationName { return [[[CTBart stations] objectAtIndex:[CTBart stationIndexForAbbr:station]] objectForKey:@"name"]; }
 - (void)viewDidLoad {
@@ -69,7 +74,7 @@ static UILabel *footer(UITableView *tv) {
 - (void)pickStation {
     NSMutableArray *rows = [NSMutableArray array]; for (NSDictionary *s in [CTBart stations]) [rows addObject:[s objectForKey:@"name"]];
     [[CTDrum shared] showInView:self.tabBarController.view title:@"BART station" rows:rows selected:[CTBart stationIndexForAbbr:station]
-        onChange:^(NSInteger r) { [station release]; station = [[[[CTBart stations] objectAtIndex:r] objectForKey:@"abbr"] copy]; [CTBart setHomeStation:station]; [stationButton setTitle:[NSString stringWithFormat:@"%@  ▾", [self stationName]] forState:UIControlStateNormal]; }
+        onChange:^(NSInteger r) { [station release]; station = [[[[CTBart stations] objectAtIndex:r] objectForKey:@"abbr"] copy]; if (!pinned) [CTBart setHomeStation:station]; [stationButton setTitle:[NSString stringWithFormat:@"%@  ▾", [self stationName]] forState:UIControlStateNormal]; }
         onDone:^{ [deps release]; deps = nil; [self.tableView reloadData]; [self refresh]; }];
 }
 - (void)plan { CTBartTripViewController *t = [[CTBartTripViewController alloc] init]; [self.navigationController pushViewController:t animated:YES]; [t release]; }
@@ -167,7 +172,11 @@ static UILabel *footer(UITableView *tv) {
 - (void)dealloc { [stops release]; [preds release]; [status release]; [super dealloc]; }
 - (void)viewDidLoad { [super viewDidLoad]; darkTable(self.tableView); footer(self.tableView); }
 - (void)viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [stops release]; stops = [[CTMuni savedStops] retain]; footer(self.tableView).text = status ?: ([stops count] ? @"" : @"Tap + and type the stop number from the pole or shelter. Each saved stop costs one 511 request per refresh."); [self.tableView reloadData]; }
-- (void)viewDidAppear:(BOOL)a { [super viewDidAppear:a]; if ([stops count] && [[NSDate date] timeIntervalSince1970] - lastFetch > 90) [self refresh]; }
+- (void)viewDidAppear:(BOOL)a {
+    [super viewDidAppear:a]; NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if ([d objectForKey:@"ct_test_metro_line"]) { NSInteger i = [d integerForKey:@"ct_test_metro_line"]; [d removeObjectForKey:@"ct_test_metro_line"]; [d synchronize]; [self tableView:self.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:i inSection:0]]; return; }
+    if ([stops count] && [[NSDate date] timeIntervalSince1970] - lastFetch > 90) [self refresh];
+}
 - (void)add { CTMuniAddViewController *v = [[CTMuniAddViewController alloc] init]; UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:v]; n.navigationBar.tintColor = self.navigationController.navigationBar.tintColor; [self presentModalViewController:n animated:YES]; [n release]; [v release]; }
 - (void)refresh {
     if (busy || ![stops count]) return; busy = YES; lastFetch = [[NSDate date] timeIntervalSince1970]; [status release]; status = @"Checking 511..."; footer(self.tableView).text = status;
@@ -185,18 +194,27 @@ static UILabel *footer(UITableView *tv) {
     [status release]; status = [[r objectAtIndex:1] length] ? [[r objectAtIndex:1] copy] : [[NSString stringWithFormat:@"Live from 511 at %@. Pull the refresh button for new times.", [f stringFromDate:[NSDate date]]] copy];
     footer(self.tableView).text = status; [self.tableView reloadData];
 }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return MAX(1, (NSInteger)[stops count]); }
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { if (![stops count]) return 1; NSArray *p = [preds objectForKey:[stops objectAtIndex:s]]; return MAX(1, MIN(6, (NSInteger)[p count])); }
+// section 0 is Muni Metro (one row per line); saved stops follow
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 1 + MAX(1, (NSInteger)[stops count]); }
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { if (s == 0) return [[CTMapView metroLines] count]; s--; if (![stops count]) return 1; NSArray *p = [preds objectForKey:[stops objectAtIndex:s]]; return MAX(1, MIN(6, (NSInteger)[p count])); }
 - (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)s {
+    if (s == 0) return boardHeader(@"MUNI METRO", amber(1)); s--;
     if (![stops count]) return boardHeader(@"NO STOPS SAVED", amber(1));
     NSString *code = [stops objectAtIndex:s]; NSString *name = [CTMuni nameForStop:code] ?: @"Unknown stop";
     return boardHeader([[NSString stringWithFormat:@"%@  ·  #%@", name, code] uppercaseString], amber(1));
 }
 - (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s { return 26; }
 - (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)c forRowAtIndexPath:(NSIndexPath *)ip { c.backgroundColor = [UIColor blackColor]; }
-- (CGFloat)tableView:(UITableView *)tv heightForRowAtIndexPath:(NSIndexPath *)ip { return 58; }
+- (CGFloat)tableView:(UITableView *)tv heightForRowAtIndexPath:(NSIndexPath *)ip { return ip.section == 0 ? 44 : 58; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *c = boardCell(tv, @"m");
+    if (ip.section == 0) {
+        UITableViewCell *c = boardCell(tv, @"ml"); NSDictionary *l = [[CTMapView metroLines] objectAtIndex:ip.row];
+        c.textLabel.text = [NSString stringWithFormat:@"%@  %@", [l objectForKey:@"id"], [[l objectForKey:@"name"] uppercaseString]]; c.textLabel.textColor = [UIColor whiteColor];
+        NSArray *dirs = [l objectForKey:@"dirs"]; c.detailTextLabel.text = [dirs count] > 1 ? [NSString stringWithFormat:@"%@ ↔ %@", [[dirs objectAtIndex:0] objectForKey:@"head"], [[dirs objectAtIndex:1] objectForKey:@"head"]] : @"";
+        c.imageView.image = [CTData badgeText:[l objectForKey:@"id"] color:[CTMapView colorForHex:[l objectForKey:@"color"]]]; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; c.selectionStyle = UITableViewCellSelectionStyleGray;
+        return c;
+    }
+    UITableViewCell *c = boardCell(tv, @"m"); ip = [NSIndexPath indexPathForRow:ip.row inSection:ip.section - 1];
     if (![stops count]) { c.textLabel.text = @"ADD A STOP"; c.textLabel.textColor = amber(0.6); c.detailTextLabel.text = @"The 5 digit number on the pole, like 15726."; return c; }
     NSString *code = [stops objectAtIndex:ip.section]; NSArray *p = [preds objectForKey:code];
     if (![p count]) { c.textLabel.text = p ? @"NO PREDICTIONS" : @"..."; c.textLabel.textColor = amber(0.6); c.detailTextLabel.text = p ? @"Nothing due at this stop right now." : @"Waiting for 511"; return c; }
@@ -206,11 +224,102 @@ static UILabel *footer(UITableView *tv) {
     c.imageView.image = [CTData badgeText:[d objectForKey:@"route"] color:muniRed()];
     return c;
 }
-- (BOOL)tableView:(UITableView *)tv canEditRowAtIndexPath:(NSIndexPath *)ip { return [stops count] > 0; }
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES]; if (ip.section != 0) return;
+    CTMetroLineViewController *v = [[CTMetroLineViewController alloc] initWithLine:[[CTMapView metroLines] objectAtIndex:ip.row]]; [self.navigationController pushViewController:v animated:YES]; [v release];
+}
+- (BOOL)tableView:(UITableView *)tv canEditRowAtIndexPath:(NSIndexPath *)ip { return ip.section > 0 && [stops count] > 0; }
 - (NSString *)tableView:(UITableView *)tv titleForDeleteConfirmationButtonForRowAtIndexPath:(NSIndexPath *)ip { return @"Remove stop"; }
 - (void)tableView:(UITableView *)tv commitEditingStyle:(UITableViewCellEditingStyle)st forRowAtIndexPath:(NSIndexPath *)ip {
     if (st != UITableViewCellEditingStyleDelete) return;
-    NSMutableArray *a = [NSMutableArray arrayWithArray:stops]; [a removeObjectAtIndex:ip.section]; [CTMuni setSavedStops:a]; [stops release]; stops = [a retain]; [tv reloadData];
+    NSMutableArray *a = [NSMutableArray arrayWithArray:stops]; [a removeObjectAtIndex:ip.section - 1]; [CTMuni setSavedStops:a]; [stops release]; stops = [a retain]; [tv reloadData];
+}
+@end
+
+#pragma mark - Muni Metro
+@implementation CTMetroLineViewController
+- (id)initWithLine:(NSDictionary *)l { if ((self = [super initWithStyle:UITableViewStylePlain])) { line = [l retain]; self.title = [NSString stringWithFormat:@"%@ %@", [l objectForKey:@"id"], [l objectForKey:@"name"]]; self.hidesBottomBarWhenPushed = YES; } return self; }
+- (void)dealloc { [line release]; [dirSeg release]; [super dealloc]; }
+- (NSArray *)dirs { return [line objectForKey:@"dirs"]; }
+- (NSArray *)stops { NSArray *d = [self dirs]; return [d count] > dir ? [[d objectAtIndex:dir] objectForKey:@"stops"] : [NSArray array]; }
+- (void)viewDidLoad {
+    [super viewDidLoad]; darkTable(self.tableView);
+    NSMutableArray *items = [NSMutableArray array]; for (NSDictionary *d in [self dirs]) [items addObject:[NSString stringWithFormat:@"→ %@", [d objectForKey:@"head"]]];
+    UIView *hdr = [[[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 54)] autorelease]; hdr.backgroundColor = [UIColor blackColor];
+    dirSeg = [[UISegmentedControl alloc] initWithItems:items]; dirSeg.frame = CGRectMake(10, 10, 300, 34); dirSeg.autoresizingMask = UIViewAutoresizingFlexibleWidth; dirSeg.segmentedControlStyle = UISegmentedControlStyleBar; dirSeg.tintColor = [UIColor colorWithWhite:0.25 alpha:1]; dirSeg.selectedSegmentIndex = 0;
+    [dirSeg addTarget:self action:@selector(dirChanged) forControlEvents:UIControlEventValueChanged]; [hdr addSubview:dirSeg]; self.tableView.tableHeaderView = hdr;
+    footer(self.tableView).text = @"Tap a stop for live arrivals from 511.";
+}
+- (void)dirChanged { dir = dirSeg.selectedSegmentIndex; [self.tableView reloadData]; }
+- (void)viewDidAppear:(BOOL)a { [super viewDidAppear:a]; NSUserDefaults *d = [NSUserDefaults standardUserDefaults]; if ([d objectForKey:@"ct_test_metro_stop"]) { NSInteger i = [d integerForKey:@"ct_test_metro_stop"]; [d removeObjectForKey:@"ct_test_metro_stop"]; [d synchronize]; [self tableView:self.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:i inSection:0]]; } }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 1; }
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return [[self stops] count]; }
+- (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)s { return boardHeader([[NSString stringWithFormat:@"%@ LINE  ·  %ld STOPS", [line objectForKey:@"id"], (long)[[self stops] count]] uppercaseString], amber(1)); }
+- (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s { return 26; }
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)c forRowAtIndexPath:(NSIndexPath *)ip { c.backgroundColor = [UIColor blackColor]; }
+- (CGFloat)tableView:(UITableView *)tv heightForRowAtIndexPath:(NSIndexPath *)ip { return 44; }
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *c = boardCell(tv, @"ms"); NSDictionary *s = [[self stops] objectAtIndex:ip.row]; NSArray *st = [self stops];
+    c.textLabel.text = [s objectForKey:@"name"]; c.textLabel.font = [UIFont boldSystemFontOfSize:15]; c.textLabel.textColor = [UIColor whiteColor]; c.textLabel.adjustsFontSizeToFitWidth = YES; c.textLabel.minimumFontSize = 11;
+    c.detailTextLabel.text = ip.row == 0 ? @"First stop" : ip.row == (NSInteger)[st count] - 1 ? @"Last stop" : [NSString stringWithFormat:@"Stop #%@", [s objectForKey:@"code"]];
+    c.imageView.image = [CTData badgeText:[line objectForKey:@"id"] color:[CTMapView colorForHex:[line objectForKey:@"color"]]]; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; c.selectionStyle = UITableViewCellSelectionStyleGray;
+    return c;
+}
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    NSMutableDictionary *s = [NSMutableDictionary dictionaryWithDictionary:[[self stops] objectAtIndex:ip.row]]; [s setObject:[line objectForKey:@"id"] forKey:@"line"]; [s setObject:[line objectForKey:@"color"] forKey:@"color"];
+    CTMetroStopViewController *v = [[CTMetroStopViewController alloc] initWithStop:s]; [self.navigationController pushViewController:v animated:YES]; [v release];
+}
+@end
+
+@implementation CTMetroStopViewController
+- (id)initWithStop:(NSDictionary *)s {
+    if ((self = [super initWithStyle:UITableViewStylePlain])) {
+        stop = [s retain]; self.title = [s objectForKey:@"name"]; self.hidesBottomBarWhenPushed = YES;
+        self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refresh)] autorelease];
+    }
+    return self;
+}
+- (void)dealloc { [stop release]; [preds release]; [status release]; [super dealloc]; }
+- (NSString *)code { return [stop objectForKey:@"code"]; }
+- (void)viewDidLoad {
+    [super viewDidLoad]; darkTable(self.tableView);
+    UIView *hdr = [[[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)] autorelease]; hdr.backgroundColor = [UIColor blackColor];
+    UIButton *save = [UIButton buttonWithType:UIButtonTypeCustom]; save.frame = CGRectMake(10, 7, 300, 30); save.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    save.backgroundColor = [UIColor colorWithWhite:0.13 alpha:1]; save.layer.cornerRadius = 6; save.layer.borderWidth = 1; save.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:1].CGColor; save.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    BOOL saved = [[CTMuni savedStops] containsObject:[self code]];
+    [save setTitle:saved ? @"Saved to the Muni tab" : @"Save stop to the Muni tab" forState:UIControlStateNormal]; [save setTitleColor:saved ? [UIColor grayColor] : [UIColor whiteColor] forState:UIControlStateNormal]; save.enabled = !saved;
+    [save addTarget:self action:@selector(save:) forControlEvents:UIControlEventTouchUpInside]; [hdr addSubview:save]; self.tableView.tableHeaderView = hdr;
+    footer(self.tableView);
+}
+- (void)save:(UIButton *)b { NSMutableArray *a = [NSMutableArray arrayWithArray:[CTMuni savedStops]]; if (![a containsObject:[self code]]) [a addObject:[self code]]; [CTMuni setSavedStops:a]; [b setTitle:@"Saved to the Muni tab" forState:UIControlStateNormal]; [b setTitleColor:[UIColor grayColor] forState:UIControlStateNormal]; b.enabled = NO; }
+- (void)viewDidAppear:(BOOL)a { [super viewDidAppear:a]; if (!preds) [self refresh]; }
+- (void)refresh {
+    if (busy) return; busy = YES; [status release]; status = @"Checking 511..."; footer(self.tableView).text = status;
+    [self performSelectorInBackground:@selector(fetch:) withObject:[self code]];
+}
+- (void)fetch:(NSString *)c { NSAutoreleasePool *p = [[NSAutoreleasePool alloc] init]; NSString *e = nil; NSArray *r = [CTMuni predictionsForStop:c error:&e]; [self performSelectorOnMainThread:@selector(fetched:) withObject:[NSArray arrayWithObjects:(r ?: [NSArray array]), (e ?: @""), nil] waitUntilDone:NO]; [p release]; }
+- (void)fetched:(NSArray *)r {
+    busy = NO; NSString *err = [r objectAtIndex:1]; [preds release]; preds = [[r objectAtIndex:0] retain];
+    NSDateFormatter *f = [[[NSDateFormatter alloc] init] autorelease]; [f setDateFormat:@"h:mm a"];
+    [status release]; status = [err length] ? [err copy] : [[NSString stringWithFormat:@"Live from 511 at %@. Tap refresh for new times.", [f stringFromDate:[NSDate date]]] copy];
+    footer(self.tableView).text = status; [self.tableView reloadData];
+}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 1; }
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return MAX(1, MIN(10, (NSInteger)[preds count])); }
+- (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)s { return boardHeader([[NSString stringWithFormat:@"%@  ·  #%@", [stop objectForKey:@"name"], [self code]] uppercaseString], amber(1)); }
+- (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s { return 26; }
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)c forRowAtIndexPath:(NSIndexPath *)ip { c.backgroundColor = [UIColor blackColor]; }
+- (CGFloat)tableView:(UITableView *)tv heightForRowAtIndexPath:(NSIndexPath *)ip { return 58; }
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *c = boardCell(tv, @"mp");
+    if (![preds count]) { c.textLabel.text = preds ? @"NO PREDICTIONS" : @"LOADING"; c.textLabel.textColor = amber(0.6); c.detailTextLabel.text = preds ? @"Nothing due at this stop right now." : @"Asking 511"; return c; }
+    NSDictionary *d = [preds objectAtIndex:ip.row]; NSString *route = [d objectForKey:@"route"];
+    c.textLabel.text = [NSString stringWithFormat:@"%@  %@", minsText([[d objectForKey:@"minutes"] integerValue]), route];
+    c.detailTextLabel.text = [NSString stringWithFormat:@"to %@", [d objectForKey:@"dest"]];
+    NSString *hex = nil; for (NSDictionary *l in [CTMapView metroLines]) if ([[l objectForKey:@"id"] isEqualToString:route]) hex = [l objectForKey:@"color"];
+    c.imageView.image = [CTData badgeText:route color:hex ? [CTMapView colorForHex:hex] : muniRed()];
+    return c;
 }
 @end
 

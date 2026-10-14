@@ -9,8 +9,3 @@
 @end
 @interface CTSettingsViewController : UITableViewController <UITextFieldDelegate> { UITextField *tokenField, *keyField; }
 @end
-@interface CTLineView : UIView { NSSet *express; void (^onPick)(NSInteger); }
-- (void)setExpress:(NSSet *)e; - (void)setOnPick:(void (^)(NSInteger))b; + (CGFloat)height;
-@end
-@interface CTLineViewController : UIViewController
-@end

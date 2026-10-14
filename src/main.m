@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import "CTControllers.h"
 #import "CTAgencyControllers.h"
+#import "CTMap.h"
 #import <QuartzCore/QuartzCore.h>
 @interface CTAppDelegate : NSObject <UIApplicationDelegate> { UIWindow *window; UITabBarController *tabs; }
 @end
@@ -9,7 +10,7 @@
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
     window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     tabs = [[UITabBarController alloc] init];
-    CTDeparturesViewController *d = [[[CTDeparturesViewController alloc] init] autorelease]; CTTripViewController *t = [[[CTTripViewController alloc] init] autorelease]; CTLineViewController *l = [[[CTLineViewController alloc] init] autorelease]; l.tabBarItem.image = [UIImage imageNamed:@"tab-line.png"];
+    CTDeparturesViewController *d = [[[CTDeparturesViewController alloc] init] autorelease]; CTTripViewController *t = [[[CTTripViewController alloc] init] autorelease]; CTMapViewController *l = [[[CTMapViewController alloc] init] autorelease]; l.tabBarItem.image = [UIImage imageNamed:@"tab-line.png"];
     CTBartViewController *b = [[[CTBartViewController alloc] init] autorelease]; b.tabBarItem.image = [UIImage imageNamed:@"logo-bart-tab.png"];
     CTMuniViewController *mu = [[[CTMuniViewController alloc] init] autorelease]; mu.tabBarItem.image = [UIImage imageNamed:@"logo-muni-tab.png"];
     d.tabBarItem.image = [UIImage imageNamed:@"logo-caltrain-tab.png"]; d.tabBarItem.title = @"Caltrain";

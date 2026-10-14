@@ -1,10 +1,13 @@
 # Next Train
 
-Caltrain, BART and Muni for iPod touch 4. Bundled Caltrain timetable, live times from 511 and BART, a trip planner you can type a sentence into, a line map, and a Laya verdict on whether to run for it.
+Caltrain, BART and Muni for iPod touch 4. Bundled Caltrain timetable, live times from 511 and BART, a trip planner you can type a sentence into, a vector map of the Bay with the Caltrain, BART and Muni Metro lines, and a Laya verdict on whether to run for it.
 
 ## Layout
 
 - `tools/compact_gtfs.py` turns the public Caltrain GTFS feed into `res/caltrain.json`. Rerun it when the timetable changes.
+- `tools/bay_polygons.py` stitches OpenStreetMap coastline ways (Overpass, `natural=coastline`) into closed water polygons for `res/bay.json`. Map data © OpenStreetMap contributors, ODbL.
+- `tools/compact_shapes.py` pulls the Caltrain track and one shape per BART color into `res/track.json` and `res/bart_map.json`; `tools/compact_muni_metro.py` builds `res/muni_metro.json` (J K L M N T stops and shapes) from the SFMTA GTFS via 511.
+- `src/CTMap` draws all of that through a CATiledLayer so pinch zoom re-renders sharp; tapping a station pushes its board.
 - `res/bart.json` is the BART station list, `res/muni_stops.json` the Muni stop names from 511.
 - `src/CTData` is the timetable engine, `CTLive` the 511 client, `CTAgencies` the BART and Muni clients, `CTAI` the OpenRelay and Laya calls.
 - Real-time needs a free token from 511.org; 60 requests per hour. BART needs nothing.
