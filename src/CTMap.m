@@ -148,7 +148,7 @@ static void loadGeo(void) {
             CGRect box = CGRectMake(at.x, at.y, sz.width, sz.height); BOOL clash = NO;
             for (int k = 0; k < nPlaced && !clash; k++) clash = CGRectIntersectsRect(placed[k], box);
             if (clash) { at.x = p.x - rr - 2.5 / zoom - sz.width; box.origin.x = at.x; clash = NO; for (int k = 0; k < nPlaced && !clash; k++) clash = CGRectIntersectsRect(placed[k], box); }   // try the other side
-            if (clash && !major) continue;
+            if (clash) continue;   // a clean map beats a complete one; the label comes back on zoom
             if (nPlaced < 400) placed[nPlaced++] = box;
             CGContextSaveGState(ctx);
             CGContextSetTextDrawingMode(ctx, kCGTextStroke); CGContextSetLineWidth(ctx, 2.6 / zoom); CGContextSetLineJoin(ctx, kCGLineJoinRound);
