@@ -7,11 +7,6 @@
 
 #define KY 1.262   // 1 / cos(37.6 deg): degrees of latitude are longer than degrees of longitude here
 
-@interface CTTiledLayer : CATiledLayer @end
-@implementation CTTiledLayer
-+ (CFTimeInterval)fadeDuration { return 0; }
-@end
-
 // --- bundled geometry, parsed once into C arrays
 typedef struct { CGPoint *pts; int n; CGRect box; } CTPoly;
 static CTPoly *gWater = NULL, *gLand = NULL; static int gWaterN = 0, gLandN = 0;
@@ -52,8 +47,7 @@ static void loadGeo(void) {
 }
 
 @implementation CTMapView
-@synthesize displayZoom;
-+ (Class)layerClass { return [CTTiledLayer class]; }
+@synthesize baseSize;
 + (NSArray *)metroStops { loadGeo(); return gMetroStops; }
 + (NSArray *)metroLines { loadGeo(); return gMetroLines; }
 + (UIColor *)colorForHex:(NSString *)hex { unsigned v = 0; [[NSScanner scannerWithString:hex] scanHexInt:&v]; return [UIColor colorWithRed:((v >> 16) & 255) / 255.0 green:((v >> 8) & 255) / 255.0 blue:(v & 255) / 255.0 alpha:1]; }
@@ -62,15 +56,16 @@ static void loadGeo(void) {
     if (m == CTMapCaltrain) { W = -122.56; E = -121.52; S = 36.97; N = 37.84; }
     else if (m == CTMapBart) { W = -122.56; E = -121.66; S = 37.44; N = 38.06; }
     else { W = -122.525; E = -122.365; S = 37.700; N = 37.815; }
-    ppd = w / (E - W); displayZoom = 1;
-    if ((self = [super initWithFrame:CGRectMake(0, 0, w, (N - S) * ppd * KY)])) {
-        self.backgroundColor = [UIColor colorWithRed:0.93 green:0.91 blue:0.87 alpha:1]; self.opaque = YES;
-        CATiledLayer *tl = (CATiledLayer *)self.layer; tl.levelsOfDetail = 1; tl.levelsOfDetailBias = 3;
-        CGFloat sc = [UIScreen mainScreen].scale; tl.tileSize = CGSizeMake(256 * sc, 256 * sc);
-        [self stations];   // parse station data here, on the main thread, before tile threads start drawing
+    ppd = w / (E - W); scale = 1; baseSize = CGSizeMake(w, (N - S) * ppd * KY);
+    if ((self = [super initWithFrame:CGRectMake(0, 0, baseSize.width, baseSize.height)])) {
+        self.backgroundColor = [UIColor colorWithRed:0.949 green:0.937 blue:0.914 alpha:1]; self.opaque = YES;   // #F2EFE9 land, as on the Google tiles iOS 5 Maps drew
+        self.contentScaleFactor = [UIScreen mainScreen].scale; self.contentMode = UIViewContentModeRedraw;
+        [self stations];   // parse station data up front
     }
     return self;
 }
+- (CGFloat)scale { return scale; }
+- (void)setScale:(CGFloat)s { scale = MAX(1, MIN(3, s)); CGRect f = self.frame; f.size = CGSizeMake(baseSize.width * scale, baseSize.height * scale); self.frame = f; [self setNeedsDisplay]; }
 - (void)dealloc { [onPick release]; [super dealloc]; }
 - (void)setOnPick:(void (^)(NSInteger))b { [onPick release]; onPick = [b copy]; }
 - (CGPoint)pointForLon:(double)lon lat:(double)lat { return CGPointMake((lon - W) * ppd, (N - lat) * ppd * KY); }
@@ -97,8 +92,9 @@ static void loadGeo(void) {
 }
 - (void)drawRect:(CGRect)rect {
     CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGFloat zoom = CGContextGetCTM(ctx).a / [UIScreen mainScreen].scale; if (zoom <= 0) zoom = 1;   // tiles are rendered at the screen scale, so divide that out
+    CGFloat zoom = scale;   // geometry is in 1x units; the CTM scales it up, and stroke widths and type are divided back down so they stay constant on screen
     CGContextSetFillColorWithColor(ctx, self.backgroundColor.CGColor); CGContextFillRect(ctx, rect);
+    CGContextScaleCTM(ctx, zoom, zoom); rect = CGRectMake(rect.origin.x / zoom, rect.origin.y / zoom, rect.size.width / zoom, rect.size.height / zoom);
     // water and islands
     CGContextSetLineJoin(ctx, kCGLineJoinRound);
     for (int pass = 0; pass < 2; pass++) {
@@ -106,9 +102,8 @@ static void loadGeo(void) {
         for (int i = 0; i < n; i++) {
             if (!CGRectIntersectsRect([self viewRectForBox:set[i].box], rect)) continue;
             CGContextBeginPath(ctx); [self addPoly:set[i] to:ctx]; CGContextClosePath(ctx);
-            if (pass) CGContextSetRGBFillColor(ctx, 0.93, 0.91, 0.87, 1); else CGContextSetRGBFillColor(ctx, 0.64, 0.78, 0.90, 1);
-            CGContextSetRGBStrokeColor(ctx, 0.42, 0.60, 0.78, 1); CGContextSetLineWidth(ctx, 0.8 / zoom);
-            CGContextDrawPath(ctx, kCGPathFillStroke);
+            if (pass) CGContextSetRGBFillColor(ctx, 0.949, 0.937, 0.914, 1); else CGContextSetRGBFillColor(ctx, 0.60, 0.70, 0.80, 1);   // #99B3CC water
+            CGContextDrawPath(ctx, kCGPathFill);
         }
     }
     CGContextSetLineCap(ctx, kCGLineCapRound);
@@ -128,7 +123,8 @@ static void loadGeo(void) {
     }
     // stations
     NSArray *st = [self stations]; CGFloat labelZoom = mode == CTMapCaltrain ? 1.5 : mode == CTMapBart ? 2.2 : 2.8;
-    UIFont *font = [UIFont boldSystemFontOfSize:9.5 / zoom]; CGFloat r = (mode == CTMapMuni ? 2.6 : 3.4) / zoom;
+    UIFont *font = [UIFont fontWithName:@"Helvetica-Bold" size:9.5 / zoom] ?: [UIFont boldSystemFontOfSize:9.5 / zoom]; CGFloat r = (mode == CTMapMuni ? 2.6 : 3.4) / zoom;
+    CGRect placed[400]; int nPlaced = 0;   // label boxes already drawn, so later ones can step aside
     for (NSUInteger i = 0; i < [st count]; i++) {
         NSDictionary *s = [st objectAtIndex:i]; CGPoint p = [self pointForLon:[[s objectForKey:@"lon"] doubleValue] lat:[[s objectForKey:@"lat"] doubleValue]];
         BOOL major = [[s objectForKey:@"major"] boolValue]; CGFloat rr = major ? r * 1.35 : r;
@@ -136,18 +132,27 @@ static void loadGeo(void) {
         CGContextSetRGBFillColor(ctx, 1, 1, 1, 1); CGContextFillEllipseInRect(ctx, CGRectMake(p.x - rr, p.y - rr, 2 * rr, 2 * rr));
         if (mode == CTMapMuni) CGContextSetStrokeColorWithColor(ctx, [CTMapView colorForHex:[s objectForKey:@"color"]].CGColor); else CGContextSetRGBStrokeColor(ctx, 0.15, 0.15, 0.15, 1);
         CGContextSetLineWidth(ctx, (major ? 1.8 : 1.3) / zoom); CGContextStrokeEllipseInRect(ctx, CGRectMake(p.x - rr, p.y - rr, 2 * rr, 2 * rr));
-        if (displayZoom >= labelZoom || major) {
+        if (zoom >= labelZoom || major) {
             NSString *name = [s objectForKey:@"name"]; CGSize sz = [name sizeWithFont:font];
             CGPoint at = CGPointMake(p.x + rr + 2.5 / zoom, p.y - sz.height / 2);
-            if (mode == CTMapCaltrain && i % 2 == 1 && displayZoom >= labelZoom) at.x = p.x - rr - 2.5 / zoom - sz.width;   // alternate sides so the dense peninsula stays legible
-            CGContextSetRGBFillColor(ctx, 1, 1, 1, 0.72); CGContextFillRect(ctx, CGRectInset(CGRectMake(at.x, at.y, sz.width, sz.height), -1.5 / zoom, 0));
-            [[UIColor colorWithWhite:0.1 alpha:1] set]; [name drawAtPoint:at withFont:font];
+            if (mode == CTMapCaltrain && i % 2 == 1 && zoom >= labelZoom) at.x = p.x - rr - 2.5 / zoom - sz.width;   // alternate sides so the dense peninsula stays legible
+            CGRect box = CGRectMake(at.x, at.y, sz.width, sz.height); BOOL clash = NO;
+            for (int k = 0; k < nPlaced && !clash; k++) clash = CGRectIntersectsRect(placed[k], box);
+            if (clash) { at.x = p.x - rr - 2.5 / zoom - sz.width; box.origin.x = at.x; clash = NO; for (int k = 0; k < nPlaced && !clash; k++) clash = CGRectIntersectsRect(placed[k], box); }   // try the other side
+            if (clash && !major) continue;
+            if (nPlaced < 400) placed[nPlaced++] = box;
+            CGContextSaveGState(ctx);
+            CGContextSetTextDrawingMode(ctx, kCGTextStroke); CGContextSetLineWidth(ctx, 2.6 / zoom); CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            [[UIColor colorWithWhite:1 alpha:0.95] set]; [name drawAtPoint:at withFont:font];       // halo
+            CGContextSetTextDrawingMode(ctx, kCGTextFill);
+            [[UIColor colorWithRed:0.20 green:0.20 blue:0.22 alpha:1] set]; [name drawAtPoint:at withFont:font];
+            CGContextRestoreGState(ctx);
         }
     }
 }
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)e {
     UITouch *t = [touches anyObject]; if (t.tapCount != 1) return;
-    CGPoint p = [t locationInView:self]; CGFloat zoom = self.transform.a > 0 ? self.transform.a : 1; CGFloat best = 22 / zoom; NSInteger bi = -1;
+    CGPoint p = [t locationInView:self]; CGFloat z = self.transform.a > 0 ? self.transform.a : 1; p.x /= scale; p.y /= scale; CGFloat best = 22 / (scale * z); NSInteger bi = -1;
     NSArray *st = [self stations];
     for (NSUInteger i = 0; i < [st count]; i++) { NSDictionary *s = [st objectAtIndex:i]; CGPoint q = [self pointForLon:[[s objectForKey:@"lon"] doubleValue] lat:[[s objectForKey:@"lat"] doubleValue]]; CGFloat d = hypotf(q.x - p.x, q.y - p.y); if (d < best) { best = d; bi = i; } }
     if (bi >= 0 && onPick) onPick(bi);
@@ -158,7 +163,7 @@ static void loadGeo(void) {
 - (id)init { if ((self = [super initWithNibName:nil bundle:nil])) { self.title = @"Map"; self.tabBarItem.title = @"Map"; mode = (CTMapMode)[[NSUserDefaults standardUserDefaults] integerForKey:@"ct_map_mode"]; } return self; }
 - (void)dealloc { [scroll release]; [map release]; [seg release]; [super dealloc]; }
 - (void)loadView {
-    UIView *root = [[[UIView alloc] initWithFrame:[[UIScreen mainScreen] applicationFrame]] autorelease]; root.backgroundColor = [UIColor colorWithRed:0.64 green:0.78 blue:0.90 alpha:1];
+    UIView *root = [[[UIView alloc] initWithFrame:[[UIScreen mainScreen] applicationFrame]] autorelease]; root.backgroundColor = [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1];
     scroll = [[UIScrollView alloc] initWithFrame:root.bounds]; scroll.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight; scroll.backgroundColor = root.backgroundColor;
     scroll.delegate = self; scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 5; scroll.bouncesZoom = YES; scroll.showsHorizontalScrollIndicator = NO; scroll.showsVerticalScrollIndicator = NO;
     [root addSubview:scroll];
@@ -173,8 +178,19 @@ static void loadGeo(void) {
 - (void)setMode:(CTMapMode)m {
     mode = m; [map removeFromSuperview]; [map release];
     map = [[CTMapView alloc] initWithMode:m width:scroll.bounds.size.width];
-    scroll.zoomScale = 1; scroll.contentSize = map.bounds.size; [scroll addSubview:map]; [self scrollViewDidZoom:scroll];
+    scroll.zoomScale = 1; scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 3; scroll.contentSize = map.bounds.size; [scroll addSubview:map]; [self center];
     [map setOnPick:^(NSInteger i) { [self pick:i]; }];
+}
+- (void)center {   // keep a small map centered in the scroll view
+    CGSize b = scroll.bounds.size; CGRect f = map.frame;
+    f.origin.x = f.size.width < b.width ? (b.width - f.size.width) / 2 : 0; f.origin.y = f.size.height < b.height ? (b.height - f.size.height) / 2 : 0; map.frame = f;
+}
+- (void)applyScale:(CGFloat)s centeredOn:(CGPoint)c {   // c in 1x map units
+    [map setScale:s]; scroll.zoomScale = 1; scroll.minimumZoomScale = 1 / map.scale; scroll.maximumZoomScale = 3 / map.scale; scroll.contentSize = map.bounds.size; [self center];
+    CGSize b = scroll.bounds.size; CGPoint off = CGPointMake(c.x * map.scale - b.width / 2, c.y * map.scale - b.height / 2);
+    off.x = MAX(0, MIN(off.x, scroll.contentSize.width - b.width)); off.y = MAX(0, MIN(off.y, scroll.contentSize.height - b.height));
+    if (scroll.contentSize.width <= b.width) off.x = 0; if (scroll.contentSize.height <= b.height) off.y = 0;
+    scroll.contentOffset = off;
 }
 - (void)pick:(NSInteger)i {
     UIViewController *v = nil;
@@ -184,15 +200,15 @@ static void loadGeo(void) {
     [self.navigationController pushViewController:v animated:YES]; [v release];
 }
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)sv { return map; }
-- (void)scrollViewDidZoom:(UIScrollView *)sv {   // keep a small map centered
-    map.displayZoom = sv.zoomScale;
-    CGSize b = sv.bounds.size; CGRect f = map.frame;
-    f.origin.x = f.size.width < b.width ? (b.width - f.size.width) / 2 : 0; f.origin.y = f.size.height < b.height ? (b.height - f.size.height) / 2 : 0; map.frame = f;
+- (void)scrollViewDidZoom:(UIScrollView *)sv { [self center]; }
+- (void)scrollViewDidEndZooming:(UIScrollView *)sv withView:(UIView *)v atScale:(float)z {   // bake the pinch into a sharp re-render
+    CGSize b = sv.bounds.size; CGPoint c = CGPointMake((sv.contentOffset.x + b.width / 2) / (map.scale * z), (sv.contentOffset.y + b.height / 2) / (map.scale * z));
+    [self applyScale:map.scale * z centeredOn:c];
 }
-- (void)viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [self scrollViewDidZoom:scroll]; }
+- (void)viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [self center]; }
 - (void)viewDidAppear:(BOOL)a {
     [super viewDidAppear:a]; NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    if ([d objectForKey:@"ct_map_zoom"]) { CGFloat z = [d floatForKey:@"ct_map_zoom"]; [d removeObjectForKey:@"ct_map_zoom"]; [d synchronize]; [scroll setZoomScale:z animated:NO]; if ([d objectForKey:@"ct_map_y"]) { [scroll setContentOffset:CGPointMake([d floatForKey:@"ct_map_x"], [d floatForKey:@"ct_map_y"]) animated:NO]; [d removeObjectForKey:@"ct_map_x"]; [d removeObjectForKey:@"ct_map_y"]; [d synchronize]; } }
+    if ([d objectForKey:@"ct_map_zoom"]) { CGFloat z = [d floatForKey:@"ct_map_zoom"]; CGPoint c = CGPointMake([d floatForKey:@"ct_map_x"], [d floatForKey:@"ct_map_y"]); [d removeObjectForKey:@"ct_map_zoom"]; [d removeObjectForKey:@"ct_map_x"]; [d removeObjectForKey:@"ct_map_y"]; [d synchronize]; [self applyScale:z centeredOn:c]; }   // test hook: zoom and the 1x map point to center on
     if ([d objectForKey:@"ct_test_map_pick"]) { NSInteger i = [d integerForKey:@"ct_test_map_pick"]; [d removeObjectForKey:@"ct_test_map_pick"]; [d synchronize]; [self pick:i]; }
 }
 @end

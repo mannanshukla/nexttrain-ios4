@@ -1,10 +1,13 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 // Vector map of the Bay: shoreline polygons from OpenStreetMap (res/bay.json) under the Caltrain track,
-// the BART lines or the Muni Metro lines, with tappable stations. Drawn through CATiledLayer so pinch zoom re-renders sharp.
+// the BART lines or the Muni Metro lines, with tappable stations. A plain view that re-renders itself at the
+// end of each pinch (1x to 3x), the way maps did before tiled layers behaved on retina.
 typedef enum { CTMapCaltrain = 0, CTMapBart = 1, CTMapMuni = 2 } CTMapMode;
-@interface CTMapView : UIView { CTMapMode mode; double W, E, S, N; CGFloat ppd, displayZoom; void (^onPick)(NSInteger); }
-@property (nonatomic, assign) CGFloat displayZoom;   // the scroll view's zoomScale, used to decide which labels to draw
+@interface CTMapView : UIView { CTMapMode mode; double W, E, S, N; CGFloat ppd, scale; CGSize baseSize; void (^onPick)(NSInteger); }
+@property (nonatomic, readonly) CGSize baseSize;     // size at 1x
+- (void)setScale:(CGFloat)s;                          // 1..3; resizes the frame and redraws
+- (CGFloat)scale;
 - (id)initWithMode:(CTMapMode)m width:(CGFloat)w;
 - (void)setOnPick:(void (^)(NSInteger))b;      // index into the mode's station list
 - (CGPoint)pointForLon:(double)lon lat:(double)lat;
