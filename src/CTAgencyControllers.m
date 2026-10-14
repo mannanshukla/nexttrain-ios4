@@ -52,7 +52,7 @@ static UILabel *footer(UITableView *tv) {
     return self;
 }
 - (id)initWithStation:(NSString *)abbr {
-    if ((self = [self init])) { pinned = YES; [station release]; station = [abbr copy]; self.navigationItem.titleView = nil; self.title = [self stationName]; self.navigationItem.rightBarButtonItem = nil; self.hidesBottomBarWhenPushed = YES; }
+    if ((self = [self init])) { pinned = YES; [station release]; station = [abbr copy]; self.navigationItem.titleView = nil; self.title = [self stationName]; self.navigationItem.rightBarButtonItem = self.navigationItem.leftBarButtonItem; self.navigationItem.leftBarButtonItem = nil; self.hidesBottomBarWhenPushed = YES; }   // Refresh moves right so the Back button can show
     return self;
 }
 - (void)dealloc { [timer invalidate]; [station release]; [deps release]; [status release]; [advisories release]; [stationButton release]; [super dealloc]; }
