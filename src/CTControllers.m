@@ -27,6 +27,10 @@ static UIViewController *settingsModal(UIViewController *from) { CTSettingsViewC
     }
     return self;
 }
+- (id)initWithStation:(NSInteger)s {
+    if ((self = [self init])) { pinned = YES; station = s; self.navigationItem.titleView = nil; self.title = stationName(s); self.navigationItem.leftBarButtonItem = nil; self.hidesBottomBarWhenPushed = YES; }
+    return self;
+}
 - (void)dealloc { [deps release]; [live release]; [liveStatus release]; [alerts release]; [dirSeg release]; [stationButton release]; [sheetDep release]; [runAlert release]; [super dealloc]; }
 - (void)openSettings { settingsModal(self); }
 - (void)viewDidLoad {
@@ -46,7 +50,7 @@ static UIViewController *settingsModal(UIViewController *from) { CTSettingsViewC
     UILabel *foot = [[[UILabel alloc] initWithFrame:CGRectMake(0, 0, 320, 60)] autorelease]; foot.tag = 77; foot.backgroundColor = [UIColor blackColor]; foot.textColor = [UIColor colorWithWhite:0.55 alpha:1]; foot.font = [UIFont systemFontOfSize:13]; foot.numberOfLines = 0; foot.textAlignment = UITextAlignmentCenter;
     self.tableView.tableFooterView = foot;
 }
-- (void)viewWillAppear:(BOOL)a { [super viewWillAppear:a]; if ([CTData homeStation] != station) { station = [CTData homeStation]; [live release]; live = nil; } [self reload]; }
+- (void)viewWillAppear:(BOOL)a { [super viewWillAppear:a]; if (!pinned && [CTData homeStation] != station) { station = [CTData homeStation]; [live release]; live = nil; } [self reload]; }
 - (void)viewDidAppear:(BOOL)a {
     [super viewDidAppear:a];
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
@@ -355,11 +359,12 @@ static UIViewController *settingsModal(UIViewController *from) { CTSettingsViewC
     NSMutableSet *ex = [NSMutableSet set];
     for (NSDictionary *t in [[CTData feed] objectForKey:@"trips"]) if ([[t objectForKey:@"type"] isEqualToString:@"Express"]) for (NSArray *s in [t objectForKey:@"stops"]) [ex addObject:[NSNumber numberWithInteger:[[s objectAtIndex:0] integerValue]]];
     [lv setExpress:ex];
-    [lv setOnPick:^(NSInteger i) { [CTData setHomeStation:i]; [lv setNeedsDisplay]; self.tabBarController.selectedIndex = 0; }];
+    [lv setOnPick:^(NSInteger i) { CTDeparturesViewController *b = [[CTDeparturesViewController alloc] initWithStation:i]; [self.navigationController pushViewController:b animated:YES]; [b release]; }];
     [sv addSubview:lv]; sv.contentSize = CGSizeMake(sv.bounds.size.width, lv.bounds.size.height);
     self.view = sv; [sv release];
     UILabel *legend = [[[UILabel alloc] initWithFrame:CGRectMake(0, 0, 200, 30)] autorelease]; legend.text = @"Bold ring = Express stop. Tap a station."; legend.font = [UIFont systemFontOfSize:11]; legend.textColor = [UIColor whiteColor]; legend.backgroundColor = [UIColor clearColor]; legend.textAlignment = UITextAlignmentCenter;
     self.navigationItem.titleView = legend;
 }
 - (void)viewWillAppear:(BOOL)a { [super viewWillAppear:a]; [[self.view.subviews objectAtIndex:0] setNeedsDisplay]; }
+- (void)viewDidAppear:(BOOL)a { [super viewDidAppear:a]; NSUserDefaults *d = [NSUserDefaults standardUserDefaults]; if ([d objectForKey:@"ct_test_line"]) { NSInteger i = [d integerForKey:@"ct_test_line"]; [d removeObjectForKey:@"ct_test_line"]; [d synchronize]; CTDeparturesViewController *b = [[CTDeparturesViewController alloc] initWithStation:i]; [self.navigationController pushViewController:b animated:YES]; [b release]; } }
 @end
