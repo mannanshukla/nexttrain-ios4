@@ -47,7 +47,7 @@ static void loadGeo(void) {
 }
 
 @implementation CTMapView
-@synthesize baseSize;
+@synthesize baseSize, style;
 + (NSArray *)metroStops { loadGeo(); return gMetroStops; }
 + (NSArray *)metroLines { loadGeo(); return gMetroLines; }
 + (UIColor *)colorForHex:(NSString *)hex { unsigned v = 0; [[NSScanner scannerWithString:hex] scanHexInt:&v]; return [UIColor colorWithRed:((v >> 16) & 255) / 255.0 green:((v >> 8) & 255) / 255.0 blue:(v & 255) / 255.0 alpha:1]; }
@@ -66,7 +66,13 @@ static void loadGeo(void) {
 }
 - (CGFloat)scale { return scale; }
 - (void)setScale:(CGFloat)s { scale = MAX(1, MIN(3, s)); CGRect f = self.frame; f.size = CGSizeMake(baseSize.width * scale, baseSize.height * scale); self.frame = f; [self setNeedsDisplay]; }
-- (void)dealloc { [onPick release]; [super dealloc]; }
+- (void)dealloc { [onPick release]; [satellite release]; [super dealloc]; }
+- (void)setStyle:(CTMapStyle)st {
+    style = st;
+    if (st == CTStyleSatellite && !satellite) satellite = [[UIImage imageWithContentsOfFile:[[NSBundle mainBundle] pathForResource:mode == CTMapCaltrain ? @"sat-caltrain" : mode == CTMapBart ? @"sat-bart" : @"sat-muni" ofType:@"jpg"]] retain];
+    self.backgroundColor = st == CTStyleNight ? [UIColor colorWithWhite:0.13 alpha:1] : [UIColor colorWithRed:0.949 green:0.937 blue:0.914 alpha:1];
+    [self setNeedsDisplay];
+}
 - (void)setOnPick:(void (^)(NSInteger))b { [onPick release]; onPick = [b copy]; }
 - (CGPoint)pointForLon:(double)lon lat:(double)lat { return CGPointMake((lon - W) * ppd, (N - lat) * ppd * KY); }
 - (CGRect)viewRectForBox:(CGRect)b { CGPoint a = [self pointForLon:b.origin.x lat:b.origin.y + b.size.height], c = [self pointForLon:b.origin.x + b.size.width lat:b.origin.y]; return CGRectMake(a.x, a.y, c.x - a.x, c.y - a.y); }
@@ -95,14 +101,17 @@ static void loadGeo(void) {
     CGFloat zoom = scale;   // geometry is in 1x units; the CTM scales it up, and stroke widths and type are divided back down so they stay constant on screen
     CGContextSetFillColorWithColor(ctx, self.backgroundColor.CGColor); CGContextFillRect(ctx, rect);
     CGContextScaleCTM(ctx, zoom, zoom); rect = CGRectMake(rect.origin.x / zoom, rect.origin.y / zoom, rect.size.width / zoom, rect.size.height / zoom);
+    BOOL night = style == CTStyleNight, sat = style == CTStyleSatellite && satellite;
+    if (sat) [satellite drawInRect:CGRectMake(0, 0, baseSize.width, baseSize.height)];
     // water and islands
     CGContextSetLineJoin(ctx, kCGLineJoinRound);
-    for (int pass = 0; pass < 2; pass++) {
+    for (int pass = 0; pass < 2 && !sat; pass++) {
         CTPoly *set = pass ? gLand : gWater; int n = pass ? gLandN : gWaterN;
         for (int i = 0; i < n; i++) {
             if (!CGRectIntersectsRect([self viewRectForBox:set[i].box], rect)) continue;
             CGContextBeginPath(ctx); [self addPoly:set[i] to:ctx]; CGContextClosePath(ctx);
-            if (pass) CGContextSetRGBFillColor(ctx, 0.949, 0.937, 0.914, 1); else CGContextSetRGBFillColor(ctx, 0.60, 0.70, 0.80, 1);   // #99B3CC water
+            if (night) { if (pass) CGContextSetRGBFillColor(ctx, 0.13, 0.13, 0.13, 1); else CGContextSetRGBFillColor(ctx, 0.04, 0.05, 0.08, 1); }
+            else { if (pass) CGContextSetRGBFillColor(ctx, 0.949, 0.937, 0.914, 1); else CGContextSetRGBFillColor(ctx, 0.60, 0.70, 0.80, 1); }   // #99B3CC water
             CGContextDrawPath(ctx, kCGPathFill);
         }
     }
@@ -110,15 +119,15 @@ static void loadGeo(void) {
     // lines
     if (mode == CTMapCaltrain) {
         for (int i = 0; i < gTrackN; i++) { CGContextBeginPath(ctx); [self addPoly:gTrack[i] to:ctx];
-            CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 0.9); CGContextSetLineWidth(ctx, 6 / zoom); CGContextStrokePath(ctx);
+            if (night) CGContextSetRGBStrokeColor(ctx, 0, 0, 0, 0.8); else CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 0.9); CGContextSetLineWidth(ctx, 6 / zoom); CGContextStrokePath(ctx);
             CGContextBeginPath(ctx); [self addPoly:gTrack[i] to:ctx]; CGContextSetRGBStrokeColor(ctx, 0.80, 0.06, 0.14, 1); CGContextSetLineWidth(ctx, 3.2 / zoom); CGContextStrokePath(ctx); }
     } else if (mode == CTMapBart) {
         for (int i = 0; i < gBartN; i++) { CGContextBeginPath(ctx); [self addPoly:gBartLines[i] to:ctx];
-            CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 0.8); CGContextSetLineWidth(ctx, 5 / zoom); CGContextStrokePath(ctx);
+            if (night) CGContextSetRGBStrokeColor(ctx, 0, 0, 0, 0.8); else CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 0.8); CGContextSetLineWidth(ctx, 5 / zoom); CGContextStrokePath(ctx);
             CGContextBeginPath(ctx); [self addPoly:gBartLines[i] to:ctx]; CGContextSetStrokeColorWithColor(ctx, [CTMapView colorForHex:[gBartColors objectAtIndex:i]].CGColor); CGContextSetLineWidth(ctx, 2.8 / zoom); CGContextStrokePath(ctx); }
     } else {
         for (NSUInteger i = 0; i < [gMetroLines count]; i++) { CGContextBeginPath(ctx); [self addPoly:gMetroShapes[i] to:ctx];
-            CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 0.8); CGContextSetLineWidth(ctx, 5 / zoom); CGContextStrokePath(ctx);
+            if (night) CGContextSetRGBStrokeColor(ctx, 0, 0, 0, 0.8); else CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 0.8); CGContextSetLineWidth(ctx, 5 / zoom); CGContextStrokePath(ctx);
             CGContextBeginPath(ctx); [self addPoly:gMetroShapes[i] to:ctx]; CGContextSetStrokeColorWithColor(ctx, [CTMapView colorForHex:[[gMetroLines objectAtIndex:i] objectForKey:@"color"]].CGColor); CGContextSetLineWidth(ctx, 2.8 / zoom); CGContextStrokePath(ctx); }
     }
     // stations
@@ -143,9 +152,10 @@ static void loadGeo(void) {
             if (nPlaced < 400) placed[nPlaced++] = box;
             CGContextSaveGState(ctx);
             CGContextSetTextDrawingMode(ctx, kCGTextStroke); CGContextSetLineWidth(ctx, 2.6 / zoom); CGContextSetLineJoin(ctx, kCGLineJoinRound);
-            [[UIColor colorWithWhite:1 alpha:0.95] set]; [name drawAtPoint:at withFont:font];       // halo
+            BOOL dark = night || sat;
+            [(dark ? [UIColor colorWithWhite:0 alpha:0.85] : [UIColor colorWithWhite:1 alpha:0.95]) set]; [name drawAtPoint:at withFont:font];       // halo
             CGContextSetTextDrawingMode(ctx, kCGTextFill);
-            [[UIColor colorWithRed:0.20 green:0.20 blue:0.22 alpha:1] set]; [name drawAtPoint:at withFont:font];
+            [(dark ? [UIColor whiteColor] : [UIColor colorWithRed:0.20 green:0.20 blue:0.22 alpha:1]) set]; [name drawAtPoint:at withFont:font];
             CGContextRestoreGState(ctx);
         }
     }
@@ -160,16 +170,21 @@ static void loadGeo(void) {
 @end
 
 @implementation CTMapViewController
-- (id)init { if ((self = [super initWithNibName:nil bundle:nil])) { self.title = @"Map"; self.tabBarItem.title = @"Map"; mode = (CTMapMode)[[NSUserDefaults standardUserDefaults] integerForKey:@"ct_map_mode"]; } return self; }
-- (void)dealloc { [scroll release]; [map release]; [seg release]; [super dealloc]; }
+- (id)init { if ((self = [super initWithNibName:nil bundle:nil])) { self.title = @"Map"; self.tabBarItem.title = @"Map"; mode = (CTMapMode)[[NSUserDefaults standardUserDefaults] integerForKey:@"ct_map_mode"]; style = (CTMapStyle)[[NSUserDefaults standardUserDefaults] integerForKey:@"ct_map_style"];
+    self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Style" style:UIBarButtonItemStyleBordered target:self action:@selector(pickStyle)] autorelease]; } return self; }
+- (void)pickStyle { UIActionSheet *a = [[UIActionSheet alloc] initWithTitle:@"Map style" delegate:self cancelButtonTitle:@"Cancel" destructiveButtonTitle:nil otherButtonTitles:@"Standard", @"Satellite", @"Night", nil]; [a showFromTabBar:self.tabBarController.tabBar]; [a release]; }
+- (void)actionSheet:(UIActionSheet *)a clickedButtonAtIndex:(NSInteger)i { if (i < 0 || i > 2) return; style = (CTMapStyle)i; [[NSUserDefaults standardUserDefaults] setInteger:style forKey:@"ct_map_style"]; [self applyStyle]; }
+- (void)applyStyle { map.style = style; scroll.backgroundColor = style == CTStyleNight ? [UIColor colorWithWhite:0.04 alpha:1] : style == CTStyleSatellite ? [UIColor colorWithWhite:0.2 alpha:1] : [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1]; self.view.backgroundColor = scroll.backgroundColor; credit.text = style == CTStyleSatellite ? @"Pinch to zoom, tap a station  ·  Imagery USGS National Map, lines © OpenStreetMap contributors" : @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors"; }
+- (void)dealloc { [scroll release]; [map release]; [seg release]; [credit release]; [super dealloc]; }
 - (void)loadView {
     UIView *root = [[[UIView alloc] initWithFrame:[[UIScreen mainScreen] applicationFrame]] autorelease]; root.backgroundColor = [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1];
     scroll = [[UIScrollView alloc] initWithFrame:root.bounds]; scroll.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight; scroll.backgroundColor = root.backgroundColor;
     scroll.delegate = self; scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 5; scroll.bouncesZoom = YES; scroll.showsHorizontalScrollIndicator = NO; scroll.showsVerticalScrollIndicator = NO;
     [root addSubview:scroll];
-    UILabel *credit = [[[UILabel alloc] initWithFrame:CGRectMake(0, root.bounds.size.height - 14, root.bounds.size.width, 14)] autorelease]; credit.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleWidth;
+    credit = [[UILabel alloc] initWithFrame:CGRectMake(0, root.bounds.size.height - 14, root.bounds.size.width, 14)]; credit.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleWidth;
     credit.text = @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors"; credit.font = [UIFont systemFontOfSize:8.5]; credit.textAlignment = UITextAlignmentCenter; credit.textColor = [UIColor colorWithWhite:0.25 alpha:1]; credit.backgroundColor = [UIColor colorWithWhite:1 alpha:0.75];
     [root addSubview:credit]; self.view = root;
+    credit.adjustsFontSizeToFitWidth = YES; credit.minimumFontSize = 6;
     seg = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObjects:@"Caltrain", @"BART", @"Muni", nil]]; seg.segmentedControlStyle = UISegmentedControlStyleBar; seg.selectedSegmentIndex = mode; [seg addTarget:self action:@selector(segChanged) forControlEvents:UIControlEventValueChanged];
     self.navigationItem.titleView = seg;
     [self setMode:mode];
@@ -179,7 +194,7 @@ static void loadGeo(void) {
     mode = m; [map removeFromSuperview]; [map release];
     map = [[CTMapView alloc] initWithMode:m width:scroll.bounds.size.width];
     scroll.zoomScale = 1; scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 3; scroll.contentSize = map.bounds.size; [scroll addSubview:map]; [self center];
-    [map setOnPick:^(NSInteger i) { [self pick:i]; }];
+    [map setOnPick:^(NSInteger i) { [self pick:i]; }]; [self applyStyle];
 }
 - (void)center {   // keep a small map centered in the scroll view
     CGSize b = scroll.bounds.size; CGRect f = map.frame;
@@ -209,6 +224,7 @@ static void loadGeo(void) {
 - (void)viewDidAppear:(BOOL)a {
     [super viewDidAppear:a]; NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     if ([d objectForKey:@"ct_map_zoom"]) { CGFloat z = [d floatForKey:@"ct_map_zoom"]; CGPoint c = CGPointMake([d floatForKey:@"ct_map_x"], [d floatForKey:@"ct_map_y"]); [d removeObjectForKey:@"ct_map_zoom"]; [d removeObjectForKey:@"ct_map_x"]; [d removeObjectForKey:@"ct_map_y"]; [d synchronize]; [self applyScale:z centeredOn:c]; }   // test hook: zoom and the 1x map point to center on
+    if ([d objectForKey:@"ct_map_style_test"]) { style = (CTMapStyle)[d integerForKey:@"ct_map_style_test"]; [d removeObjectForKey:@"ct_map_style_test"]; [d synchronize]; [self applyStyle]; }
     if ([d objectForKey:@"ct_test_map_pick"]) { NSInteger i = [d integerForKey:@"ct_test_map_pick"]; [d removeObjectForKey:@"ct_test_map_pick"]; [d synchronize]; [self pick:i]; }
 }
 @end

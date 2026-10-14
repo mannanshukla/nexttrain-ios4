@@ -13,6 +13,7 @@ done
 clang -target armv7-apple-ios4.3 -isysroot "$SDK" "$OUT"/obj/*.o -o "$OUT/Payload/$APP.app/$APP" \
   -framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework AudioToolbox -lobjc -lz 2>&1 | grep -v 'no platform load command' || true
 test -f "$OUT/Payload/$APP.app/$APP"
+cp -R res/Settings.bundle "$OUT/Payload/$APP.app/" 2>/dev/null; cp res/sat-*.jpg "$OUT/Payload/$APP.app/"
 cp res/Icon.png res/Icon@2x.png res/tab-*.png res/logo-*.png res/caltrain.json res/bart.json res/muni_stops.json res/bay.json res/track.json res/bart_map.json res/muni_metro.json "$OUT/Payload/$APP.app/"
 cat > "$OUT/Payload/$APP.app/Info.plist" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
