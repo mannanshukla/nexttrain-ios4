@@ -16,13 +16,11 @@ static UIColor *amber(CGFloat a) { return [UIColor colorWithRed:1.0 green:0.69 b
 static UIFont *boardFont(CGFloat sz) { return [UIFont fontWithName:@"CourierNewPS-BoldMT" size:sz] ?: [UIFont boldSystemFontOfSize:sz]; }
 static NSString *shortHead(NSString *h) { if ([h isEqualToString:@"San Francisco"]) return @"SF"; if ([h isEqualToString:@"San Jose Diridon"]) return @"San Jose"; return h; }
 static NSString *stationName(NSInteger i) { NSArray *s = [CTData stations]; return i >= 0 && i < (NSInteger)[s count] ? [[s objectAtIndex:i] objectForKey:@"name"] : @"?"; }
-static UIViewController *settingsModal(UIViewController *from) { CTSettingsViewController *s = [[[CTSettingsViewController alloc] init] autorelease]; UINavigationController *n = [[[UINavigationController alloc] initWithRootViewController:s] autorelease]; n.navigationBar.tintColor = from.navigationController.navigationBar.tintColor; [from presentModalViewController:n animated:YES]; return s; }
 
 @implementation CTDeparturesViewController
 - (id)init {
     if ((self = [super initWithStyle:UITableViewStylePlain])) {
         self.title = @"Caltrain"; self.tabBarItem.title = @"Caltrain"; self.navigationItem.titleView = logoTitle(@"logo-caltrain.png"); station = [CTData homeStation]; dir = [CTData homeDir];
-        self.navigationItem.leftBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Settings" style:UIBarButtonItemStyleBordered target:self action:@selector(openSettings)] autorelease];
         self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refreshLive)] autorelease];
     }
     return self;
@@ -32,7 +30,6 @@ static UIViewController *settingsModal(UIViewController *from) { CTSettingsViewC
     return self;
 }
 - (void)dealloc { [deps release]; [live release]; [liveStatus release]; [alerts release]; [dirSeg release]; [stationButton release]; [sheetDep release]; [runAlert release]; [super dealloc]; }
-- (void)openSettings { settingsModal(self); }
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.tableView.backgroundColor = [UIColor blackColor]; self.tableView.separatorColor = [UIColor colorWithWhite:0.2 alpha:1];
@@ -279,33 +276,5 @@ static UIViewController *settingsModal(UIViewController *from) { CTSettingsViewC
 }
 @end
 
-@implementation CTSettingsViewController
-- (id)init { if ((self = [super initWithStyle:UITableViewStyleGrouped])) { self.title = @"Settings"; self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)] autorelease]; } return self; }
-- (void)dealloc { [tokenField release]; [keyField release]; [super dealloc]; }
-- (UITextField *)field:(NSString *)ph text:(NSString *)t { UITextField *f = [[UITextField alloc] initWithFrame:CGRectMake(0, 0, 260, 30)]; f.placeholder = ph; f.text = t; f.font = [UIFont systemFontOfSize:15]; f.delegate = self; f.returnKeyType = UIReturnKeyDone; f.clearButtonMode = UITextFieldViewModeWhileEditing; f.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter; f.autocorrectionType = UITextAutocorrectionTypeNo; f.autocapitalizationType = UITextAutocapitalizationTypeNone; return f; }
-- (void)viewDidLoad { [super viewDidLoad]; tokenField = [self field:@"xxxxxxxx-xxxx-..." text:[CTData token]]; keyField = [self field:@"or_..." text:[CTData apiKey]]; keyField.secureTextEntry = YES; }
-- (void)save { [CTData setToken:[tokenField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]]; [CTData setApiKey:[keyField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]]; }
-- (void)done { [self save]; [self dismissModalViewControllerAnimated:YES]; }
-- (BOOL)textFieldShouldReturn:(UITextField *)tf { [tf resignFirstResponder]; return YES; }
-- (void)textFieldDidEndEditing:(UITextField *)tf { [self save]; }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 4; }
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return s == 0 ? 2 : 1; }
-- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s { return [[NSArray arrayWithObjects:@"Home station", @"511.org token", @"OpenRelay API key", @"About", nil] objectAtIndex:s]; }
-- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s { return s == 0 ? @"Walk time feeds \"Run for it?\" on the board: tap a train leaving in 10 minutes or less and Laya decides." : s == 1 ? @"Free at 511.org/open-data/token. Turns on live predictions and service alerts. 511 allows 60 requests an hour, so the app only refreshes when you ask." : s == 2 ? @"Only used for the \"just say it\" box in Trip." : s == 3 ? [NSString stringWithFormat:@"Timetable: Caltrain GTFS, %@, valid through %@. Real-time by 511 SF Bay.", [CTData feedVersion], [CTData feedEnd]] : nil; }
-- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *c = [[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil] autorelease]; c.selectionStyle = UITableViewCellSelectionStyleNone; CGFloat w = c.contentView.bounds.size.width;
-    if (ip.section == 0 && ip.row == 1) { c.textLabel.text = @"Walk to platform"; c.detailTextLabel.text = [NSString stringWithFormat:@"%ld min", (long)[CTData walkMinutes]]; c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; c.selectionStyle = UITableViewCellSelectionStyleBlue; }
-    else if (ip.section == 0) { c.textLabel.text = @"Station"; c.detailTextLabel.text = stationName([CTData homeStation]); c.accessoryType = UITableViewCellAccessoryDisclosureIndicator; c.selectionStyle = UITableViewCellSelectionStyleBlue; }
-    else if (ip.section == 1) { tokenField.frame = CGRectMake(10, 7, w - 20, 30); tokenField.autoresizingMask = UIViewAutoresizingFlexibleWidth; [c.contentView addSubview:tokenField]; }
-    else if (ip.section == 2) { keyField.frame = CGRectMake(10, 7, w - 20, 30); keyField.autoresizingMask = UIViewAutoresizingFlexibleWidth; [c.contentView addSubview:keyField]; }
-    else { c.textLabel.text = @"Next Train"; c.detailTextLabel.text = @"1.0"; }
-    return c;
-}
-- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
-    [tv deselectRowAtIndexPath:ip animated:YES]; [self.view endEditing:YES]; if (ip.section != 0) return;
-    if (ip.row == 1) { NSMutableArray *rows = [NSMutableArray array]; for (int i = 1; i <= 15; i++) [rows addObject:[NSString stringWithFormat:@"%d min", i]];
-        [[CTDrum shared] showInView:self.navigationController.view title:@"Walk to the platform" rows:rows selected:[CTData walkMinutes] - 1 onChange:^(NSInteger r) { [CTData setWalkMinutes:r + 1]; [tv reloadRowsAtIndexPaths:[NSArray arrayWithObject:ip] withRowAnimation:UITableViewRowAnimationNone]; } onDone:nil]; return; }
-    [[CTDrum shared] showInView:self.navigationController.view title:@"Home station" rows:CTStationRows() selected:[CTData homeStation] onChange:^(NSInteger r) { [CTData setHomeStation:r]; [tv reloadRowsAtIndexPaths:[NSArray arrayWithObject:ip] withRowAnimation:UITableViewRowAnimationNone]; } onDone:nil];
-}
-@end
+
 

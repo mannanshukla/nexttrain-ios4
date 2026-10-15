@@ -49,6 +49,44 @@
 			<string>PSTextFieldSpecifier</string>
 		</dict>
 		<dict>
+			<key>FooterText</key>
+			<string>Walk time feeds "Run for it?": tap a train leaving in ten minutes or less and Laya decides. Your home station is set from the station button on the board.</string>
+			<key>Title</key>
+			<string>Board</string>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+		</dict>
+		<dict>
+			<key>DefaultValue</key>
+			<integer>5</integer>
+			<key>Key</key>
+			<string>ct_walk</string>
+			<key>Title</key>
+			<string>Walk to platform</string>
+			<key>Titles</key>
+			<array>
+				<string>1 minute</string>
+				<string>2 minutes</string>
+				<string>3 minutes</string>
+				<string>5 minutes</string>
+				<string>7 minutes</string>
+				<string>10 minutes</string>
+				<string>15 minutes</string>
+			</array>
+			<key>Type</key>
+			<string>PSMultiValueSpecifier</string>
+			<key>Values</key>
+			<array>
+				<integer>1</integer>
+				<integer>2</integer>
+				<integer>3</integer>
+				<integer>5</integer>
+				<integer>7</integer>
+				<integer>10</integer>
+				<integer>15</integer>
+			</array>
+		</dict>
+		<dict>
 			<key>Title</key>
 			<string>Map</string>
 			<key>Type</key>

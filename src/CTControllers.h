@@ -7,5 +7,3 @@
 @interface CTTripDetailViewController : UITableViewController { NSDictionary *trip; NSInteger fromIdx, toIdx; }
 - (id)initWithTrip:(NSDictionary *)t from:(NSInteger)a to:(NSInteger)b;
 @end
-@interface CTSettingsViewController : UITableViewController <UITextFieldDelegate> { UITextField *tokenField, *keyField; }
-@end
