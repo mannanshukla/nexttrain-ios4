@@ -58,7 +58,7 @@
 		</dict>
 		<dict>
 			<key>DefaultValue</key>
-			<integer>5</integer>
+			<integer>4</integer>
 			<key>Key</key>
 			<string>ct_walk</string>
 			<key>Title</key>
@@ -68,6 +68,7 @@
 				<string>1 minute</string>
 				<string>2 minutes</string>
 				<string>3 minutes</string>
+				<string>4 minutes</string>
 				<string>5 minutes</string>
 				<string>7 minutes</string>
 				<string>10 minutes</string>
@@ -80,6 +81,7 @@
 				<integer>1</integer>
 				<integer>2</integer>
 				<integer>3</integer>
+				<integer>4</integer>
 				<integer>5</integer>
 				<integer>7</integer>
 				<integer>10</integer>
