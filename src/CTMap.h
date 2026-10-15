@@ -4,7 +4,7 @@
 // the BART lines or the Muni Metro lines, with tappable stations. A plain view that re-renders itself at the
 // end of each pinch (1x to 3x), the way maps did before tiled layers behaved on retina.
 typedef enum { CTMapCaltrain = 0, CTMapBart = 1, CTMapMuni = 2 } CTMapMode;
-typedef enum { CTStyleStandard = 0, CTStyleSatellite = 1, CTStyleNight = 2 } CTMapStyle;   // Standard: the old tile palette. Satellite: USGS imagery (public domain). Night: dark.
+typedef enum { CTStyleStandard = 0, CTStyleSatellite = 1, CTStyleNight = 2 } CTMapStyle;   // Standard: the old tile palette. Satellite: Sentinel-2 cloudless 2016 by EOX (CC BY 4.0) for Caltrain and BART, USGS (public domain) for Muni. Night: dark.
 @interface CTMapView : UIView { CTMapMode mode; CTMapStyle style; double W, E, S, N; CGFloat ppd, scale; CGSize baseSize; UIImage *satellite; void (^onPick)(NSInteger); }
 @property (nonatomic, assign) CTMapStyle style;
 @property (nonatomic, readonly) CGSize baseSize;     // size at 1x

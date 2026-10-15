@@ -134,21 +134,28 @@ static void loadGeo(void) {
     NSArray *st = [self stations]; CGFloat labelZoom = mode == CTMapCaltrain ? 1.5 : mode == CTMapBart ? 2.2 : 2.8;
     UIFont *font = [UIFont fontWithName:@"Helvetica-Bold" size:9.5 / zoom] ?: [UIFont boldSystemFontOfSize:9.5 / zoom]; CGFloat r = (mode == CTMapMuni ? 2.6 : 3.4) / zoom;
     CGRect placed[400]; int nPlaced = 0;   // label boxes already drawn, so later ones can step aside
-    for (NSUInteger i = 0; i < [st count]; i++) {
+    for (int pass = 0; pass < 2; pass++) for (NSUInteger i = 0; i < [st count]; i++) {   // all the dots, then all the names, so no dot lands on a name
         NSDictionary *s = [st objectAtIndex:i]; CGPoint p = [self pointForLon:[[s objectForKey:@"lon"] doubleValue] lat:[[s objectForKey:@"lat"] doubleValue]];
         BOOL major = [[s objectForKey:@"major"] boolValue]; CGFloat rr = major ? r * 1.35 : r;
         if (!CGRectIntersectsRect(CGRectInset(CGRectMake(p.x, p.y, 0, 0), -170 / zoom, -14 / zoom), rect)) continue;
-        CGContextSetRGBFillColor(ctx, 1, 1, 1, 1); CGContextFillEllipseInRect(ctx, CGRectMake(p.x - rr, p.y - rr, 2 * rr, 2 * rr));
-        if (mode == CTMapMuni) CGContextSetStrokeColorWithColor(ctx, [CTMapView colorForHex:[s objectForKey:@"color"]].CGColor); else CGContextSetRGBStrokeColor(ctx, 0.15, 0.15, 0.15, 1);
-        CGContextSetLineWidth(ctx, (major ? 1.8 : 1.3) / zoom); CGContextStrokeEllipseInRect(ctx, CGRectMake(p.x - rr, p.y - rr, 2 * rr, 2 * rr));
+        if (pass == 0) {
+            CGContextSetRGBFillColor(ctx, 1, 1, 1, 1); CGContextFillEllipseInRect(ctx, CGRectMake(p.x - rr, p.y - rr, 2 * rr, 2 * rr));
+            if (mode == CTMapMuni) CGContextSetStrokeColorWithColor(ctx, [CTMapView colorForHex:[s objectForKey:@"color"]].CGColor); else CGContextSetRGBStrokeColor(ctx, 0.15, 0.15, 0.15, 1);
+            CGContextSetLineWidth(ctx, (major ? 1.8 : 1.3) / zoom); CGContextStrokeEllipseInRect(ctx, CGRectMake(p.x - rr, p.y - rr, 2 * rr, 2 * rr));
+            continue;
+        }
         if (zoom >= labelZoom || major) {
             NSString *name = [s objectForKey:@"name"]; CGSize sz = [name sizeWithFont:font];
-            CGPoint at = CGPointMake(p.x + rr + 2.5 / zoom, p.y - sz.height / 2);
-            if (mode == CTMapCaltrain && i % 2 == 1 && zoom >= labelZoom) at.x = p.x - rr - 2.5 / zoom - sz.width;   // alternate sides so the dense peninsula stays legible
-            CGRect box = CGRectMake(at.x, at.y, sz.width, sz.height); BOOL clash = NO;
-            for (int k = 0; k < nPlaced && !clash; k++) clash = CGRectIntersectsRect(placed[k], box);
-            if (clash) { at.x = p.x - rr - 2.5 / zoom - sz.width; box.origin.x = at.x; clash = NO; for (int k = 0; k < nPlaced && !clash; k++) clash = CGRectIntersectsRect(placed[k], box); }   // try the other side
-            if (clash) continue;   // a clean map beats a complete one; the label comes back on zoom
+            CGFloat right = p.x + rr + 2.5 / zoom, left = p.x - rr - 2.5 / zoom - sz.width, edge = 2 / zoom;
+            BOOL preferLeft = mode == CTMapCaltrain && i % 2 == 1 && zoom >= labelZoom;   // alternate sides so the dense peninsula stays legible
+            CGFloat tries[2] = { preferLeft ? left : right, preferLeft ? right : left };
+            CGPoint at = CGPointZero; CGRect box = CGRectZero; BOOL ok = NO;
+            for (int t = 0; t < 2 && !ok; t++) {   // first side that fits on the map and misses the labels already drawn
+                if (tries[t] < edge || tries[t] + sz.width > baseSize.width - edge) continue;
+                at = CGPointMake(tries[t], p.y - sz.height / 2); box = CGRectMake(at.x, at.y, sz.width, sz.height); ok = YES;
+                for (int k = 0; k < nPlaced && ok; k++) if (CGRectIntersectsRect(placed[k], box)) ok = NO;
+            }
+            if (!ok) continue;   // a clean map beats a complete one; the label comes back on zoom
             if (nPlaced < 400) placed[nPlaced++] = box;
             CGContextSaveGState(ctx);
             CGContextSetTextDrawingMode(ctx, kCGTextStroke); CGContextSetLineWidth(ctx, 2.6 / zoom); CGContextSetLineJoin(ctx, kCGLineJoinRound);
@@ -174,7 +181,7 @@ static void loadGeo(void) {
     self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Style" style:UIBarButtonItemStyleBordered target:self action:@selector(pickStyle)] autorelease]; } return self; }
 - (void)pickStyle { UIActionSheet *a = [[UIActionSheet alloc] initWithTitle:@"Map style" delegate:self cancelButtonTitle:@"Cancel" destructiveButtonTitle:nil otherButtonTitles:@"Standard", @"Satellite", @"Night", nil]; [a showFromTabBar:self.tabBarController.tabBar]; [a release]; }
 - (void)actionSheet:(UIActionSheet *)a clickedButtonAtIndex:(NSInteger)i { if (i < 0 || i > 2) return; style = (CTMapStyle)i; [[NSUserDefaults standardUserDefaults] setInteger:style forKey:@"ct_map_style"]; [self applyStyle]; }
-- (void)applyStyle { map.style = style; scroll.backgroundColor = style == CTStyleNight ? [UIColor colorWithWhite:0.04 alpha:1] : style == CTStyleSatellite ? [UIColor colorWithWhite:0.2 alpha:1] : [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1]; self.view.backgroundColor = scroll.backgroundColor; credit.text = style == CTStyleSatellite ? @"Pinch to zoom, tap a station  ·  Imagery USGS National Map, lines © OpenStreetMap contributors" : @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors"; }
+- (void)applyStyle { map.style = style; scroll.backgroundColor = style == CTStyleNight ? [UIColor colorWithWhite:0.04 alpha:1] : style == CTStyleSatellite ? [UIColor colorWithWhite:0.2 alpha:1] : [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1]; self.view.backgroundColor = scroll.backgroundColor; credit.text = style != CTStyleSatellite ? @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors" : mode == CTMapMuni ? @"Pinch to zoom, tap a station  ·  Imagery USGS National Map, lines © OpenStreetMap contributors" : @"Imagery Sentinel-2 cloudless 2016 by EOX, CC BY 4.0  ·  lines © OpenStreetMap contributors"; }
 - (void)dealloc { [scroll release]; [map release]; [seg release]; [credit release]; [super dealloc]; }
 - (void)loadView {
     UIView *root = [[[UIView alloc] initWithFrame:[[UIScreen mainScreen] applicationFrame]] autorelease]; root.backgroundColor = [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1];
@@ -182,7 +189,7 @@ static void loadGeo(void) {
     scroll.delegate = self; scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 5; scroll.bouncesZoom = YES; scroll.showsHorizontalScrollIndicator = NO; scroll.showsVerticalScrollIndicator = NO;
     [root addSubview:scroll];
     credit = [[UILabel alloc] initWithFrame:CGRectMake(0, root.bounds.size.height - 14, root.bounds.size.width, 14)]; credit.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleWidth;
-    credit.text = @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors"; credit.font = [UIFont systemFontOfSize:8.5]; credit.textAlignment = UITextAlignmentCenter; credit.textColor = [UIColor colorWithWhite:0.25 alpha:1]; credit.backgroundColor = [UIColor colorWithWhite:1 alpha:0.75];
+    credit.text = @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors"; credit.font = [UIFont systemFontOfSize:8.5]; credit.adjustsFontSizeToFitWidth = YES; credit.minimumFontSize = 7; credit.textAlignment = UITextAlignmentCenter; credit.textColor = [UIColor colorWithWhite:0.25 alpha:1]; credit.backgroundColor = [UIColor colorWithWhite:1 alpha:0.75];
     [root addSubview:credit]; self.view = root;
     credit.adjustsFontSizeToFitWidth = YES; credit.minimumFontSize = 6;
     seg = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObjects:@"Caltrain", @"BART", @"Muni", nil]]; seg.segmentedControlStyle = UISegmentedControlStyleBar; seg.selectedSegmentIndex = mode; [seg addTarget:self action:@selector(segChanged) forControlEvents:UIControlEventValueChanged];
