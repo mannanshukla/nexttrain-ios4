@@ -22,6 +22,7 @@ static NSString *stationName(NSInteger i) { NSArray *s = [CTData stations]; retu
     if ((self = [super initWithStyle:UITableViewStylePlain])) {
         self.title = @"Caltrain"; self.tabBarItem.title = @"Caltrain"; self.navigationItem.titleView = logoTitle(@"logo-caltrain.png"); station = [CTData homeStation]; dir = [CTData homeDir];
         self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refreshLive)] autorelease];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(foreground) name:UIApplicationWillEnterForegroundNotification object:nil];
     }
     return self;
 }
@@ -29,7 +30,7 @@ static NSString *stationName(NSInteger i) { NSArray *s = [CTData stations]; retu
     if ((self = [self init])) { pinned = YES; station = s; self.navigationItem.titleView = nil; self.title = stationName(s); self.navigationItem.leftBarButtonItem = nil; self.hidesBottomBarWhenPushed = YES; }
     return self;
 }
-- (void)dealloc { [deps release]; [live release]; [liveStatus release]; [alerts release]; [dirSeg release]; [stationButton release]; [sheetDep release]; [runAlert release]; [super dealloc]; }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; [timer invalidate]; [deps release]; [live release]; [liveStatus release]; [alerts release]; [dirSeg release]; [stationButton release]; [sheetDep release]; [runAlert release]; [super dealloc]; }
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.tableView.backgroundColor = [UIColor blackColor]; self.tableView.separatorColor = [UIColor colorWithWhite:0.2 alpha:1];
@@ -54,8 +55,13 @@ static NSString *stationName(NSInteger i) { NSArray *s = [CTData stations]; retu
     if ([d boolForKey:@"ct_test_pick"]) { [d removeObjectForKey:@"ct_test_pick"]; [d synchronize]; [self pickStation]; }
     if ([d boolForKey:@"ct_test_run"]) { [d removeObjectForKey:@"ct_test_run"]; [d synchronize]; if ([deps count]) { [sheetDep release]; sheetDep = [[deps objectAtIndex:0] retain]; sheetNext = [deps count] > 1 ? [self minutesFor:[deps objectAtIndex:1]] : 0; [self performSelector:@selector(fakeRun) withObject:nil afterDelay:12]; } }
     if ([[CTData token] length] && [[NSDate date] timeIntervalSince1970] - lastFetch > 90) [self refreshLive];
+    [timer invalidate]; [timer release]; timer = [[NSTimer scheduledTimerWithTimeInterval:30 target:self selector:@selector(reload) userInfo:nil repeats:YES] retain];   // keep the countdowns current
 }
-- (void)viewWillDisappear:(BOOL)a { [super viewWillDisappear:a]; [[CTDrum shared] hide]; }
+- (void)viewWillDisappear:(BOOL)a { [super viewWillDisappear:a]; [timer invalidate]; [timer release]; timer = nil; [[CTDrum shared] hide]; }
+- (void)foreground {   // back from the background hours later: the board must not show trains that already left
+    if (!self.isViewLoaded || !self.view.window) return;
+    [self reload]; if ([[CTData token] length] && [[NSDate date] timeIntervalSince1970] - lastFetch > 90) [self refreshLive];
+}
 - (void)reload {
     [stationButton setTitle:[NSString stringWithFormat:@"%@  ▾", stationName(station)] forState:UIControlStateNormal];
     [deps release]; deps = [[CTData departuresFrom:station dir:dir date:[NSDate date] after:[CTData minutesNow]] retain];
