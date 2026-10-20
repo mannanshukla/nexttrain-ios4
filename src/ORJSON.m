@@ -1,31 +1,41 @@
 #import "ORJSON.h"
 
+// Works on a plain unichar copy of the text: one object per JSON value, never one per character.
 @interface ORJSONParser : NSObject {
-    NSString *src; NSUInteger pos; NSUInteger len; BOOL failed;
+    unichar *buf; NSUInteger pos; NSUInteger len; BOOL failed;
 }
 - (id)initWithString:(NSString *)s;
 - (id)parseValue;
 @end
 
+static unsigned hex4(const unichar *p) {   // like scanHexInt over four characters: stops at the first non-hex one
+    unsigned v = 0;
+    for (int i = 0; i < 4; i++) { unichar h = p[i]; int d = h >= '0' && h <= '9' ? h - '0' : h >= 'a' && h <= 'f' ? h - 'a' + 10 : h >= 'A' && h <= 'F' ? h - 'A' + 10 : -1; if (d < 0) break; v = v * 16 + d; }
+    return v;
+}
+
 @implementation ORJSONParser
-- (id)initWithString:(NSString *)s { if ((self = [super init])) { src = [s retain]; len = [s length]; pos = 0; } return self; }
-- (void)dealloc { [src release]; [super dealloc]; }
-- (unichar)peek { return pos < len ? [src characterAtIndex:pos] : 0; }
-- (void)skipWS { while (pos < len) { unichar c = [src characterAtIndex:pos]; if (c==' '||c=='\n'||c=='\r'||c=='\t') pos++; else break; } }
+- (id)initWithString:(NSString *)s { if ((self = [super init])) { len = [s length]; buf = malloc(MAX(len, 1) * sizeof(unichar)); [s getCharacters:buf range:NSMakeRange(0, len)]; pos = 0; } return self; }
+- (void)dealloc { free(buf); [super dealloc]; }
+- (unichar)peek { return pos < len ? buf[pos] : 0; }
+- (void)skipWS { while (pos < len) { unichar c = buf[pos]; if (c==' '||c=='\n'||c=='\r'||c=='\t') pos++; else break; } }
 - (BOOL)consume:(NSString *)lit {
-    if (pos + [lit length] <= len && [[src substringWithRange:NSMakeRange(pos, [lit length])] isEqualToString:lit]) { pos += [lit length]; return YES; }
-    return NO;
+    NSUInteger n = [lit length]; if (pos + n > len) return NO;
+    for (NSUInteger i = 0; i < n; i++) if (buf[pos + i] != [lit characterAtIndex:i]) return NO;
+    pos += n; return YES;
 }
 - (NSString *)parseString {
     if ([self peek] != '"') { failed = YES; return nil; }
-    pos++;
-    NSMutableString *out = [NSMutableString string];
+    NSUInteger start = ++pos;
+    while (pos < len && buf[pos] != '"' && buf[pos] != '\\') pos++;
+    if (pos < len && buf[pos] == '"') { pos++; return [NSString stringWithCharacters:buf + start length:pos - 1 - start]; }   // no escapes: the common case
+    NSMutableString *out = [NSMutableString stringWithCharacters:buf + start length:pos - start];
     while (pos < len) {
-        unichar c = [src characterAtIndex:pos++];
+        unichar c = buf[pos++];
         if (c == '"') return out;
         if (c == '\\') {
             if (pos >= len) break;
-            unichar e = [src characterAtIndex:pos++];
+            unichar e = buf[pos++];
             switch (e) {
                 case '"': [out appendString:@"\""]; break;
                 case '\\': [out appendString:@"\\"]; break;
@@ -37,29 +47,29 @@
                 case 't': [out appendString:@"\t"]; break;
                 case 'u': {
                     if (pos + 4 > len) { failed = YES; return nil; }
-                    unsigned v = 0; [[NSScanner scannerWithString:[src substringWithRange:NSMakeRange(pos,4)]] scanHexInt:&v]; pos += 4;
-                    unichar u = (unichar)v;
+                    unichar u = (unichar)hex4(buf + pos); pos += 4;
                     // surrogate pair
-                    if (u >= 0xD800 && u <= 0xDBFF && pos + 6 <= len && [src characterAtIndex:pos]=='\\' && [src characterAtIndex:pos+1]=='u') {
-                        unsigned lo = 0; [[NSScanner scannerWithString:[src substringWithRange:NSMakeRange(pos+2,4)]] scanHexInt:&lo]; pos += 6;
-                        unichar pair[2] = { u, (unichar)lo }; [out appendString:[NSString stringWithCharacters:pair length:2]];
-                    } else { [out appendString:[NSString stringWithCharacters:&u length:1]]; }
+                    if (u >= 0xD800 && u <= 0xDBFF && pos + 6 <= len && buf[pos]=='\\' && buf[pos+1]=='u') {
+                        unichar pair[2] = { u, (unichar)hex4(buf + pos + 2) }; pos += 6;
+                        CFStringAppendCharacters((CFMutableStringRef)out, pair, 2);
+                    } else { CFStringAppendCharacters((CFMutableStringRef)out, &u, 1); }
                     break;
                 }
                 default: failed = YES; return nil;
             }
         } else {
-            [out appendString:[NSString stringWithCharacters:&c length:1]];
+            NSUInteger run = pos - 1;   // copy everything up to the next quote or backslash in one go
+            while (pos < len && buf[pos] != '"' && buf[pos] != '\\') pos++;
+            CFStringAppendCharacters((CFMutableStringRef)out, buf + run, pos - run);
         }
     }
     failed = YES; return nil;
 }
 - (id)parseNumber {
-    NSUInteger start = pos;
-    while (pos < len) { unichar c = [src characterAtIndex:pos]; if ((c>='0'&&c<='9')||c=='-'||c=='+'||c=='.'||c=='e'||c=='E') pos++; else break; }
-    NSString *s = [src substringWithRange:NSMakeRange(start, pos-start)];
-    if ([s rangeOfString:@"."].location != NSNotFound || [s rangeOfString:@"e"].location != NSNotFound || [s rangeOfString:@"E"].location != NSNotFound)
-        return [NSNumber numberWithDouble:[s doubleValue]];
+    NSUInteger start = pos; BOOL real = NO;
+    while (pos < len) { unichar c = buf[pos]; if ((c>='0'&&c<='9')||c=='-'||c=='+') pos++; else if (c=='.'||c=='e'||c=='E') { real = YES; pos++; } else break; }
+    NSString *s = [NSString stringWithCharacters:buf + start length:pos - start];
+    if (real) return [NSNumber numberWithDouble:[s doubleValue]];
     return [NSNumber numberWithLongLong:[s longLongValue]];
 }
 - (id)parseValue {
@@ -114,6 +124,9 @@
     return bad ? nil : v;
 }
 + (NSString *)escape:(NSString *)s {
+    static NSCharacterSet *special = nil;
+    if (!special) { NSMutableCharacterSet *m = [NSMutableCharacterSet characterSetWithRange:NSMakeRange(0, 0x20)]; [m addCharactersInString:@"\"\\"]; special = [m copy]; }
+    if ([s rangeOfCharacterFromSet:special].location == NSNotFound) return s;   // nothing to escape: ids, names, most text
     NSMutableString *o = [NSMutableString stringWithCapacity:[s length]+8];
     NSUInteger n = [s length];
     for (NSUInteger i = 0; i < n; i++) {
@@ -126,7 +139,7 @@
             case '\t': [o appendString:@"\\t"]; break;
             default:
                 if (c < 0x20) [o appendFormat:@"\\u%04x", c];
-                else [o appendString:[NSString stringWithCharacters:&c length:1]];
+                else CFStringAppendCharacters((CFMutableStringRef)o, &c, 1);
         }
     }
     return o;

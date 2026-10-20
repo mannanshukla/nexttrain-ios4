@@ -183,6 +183,7 @@ static void loadGeo(void) {
 - (void)actionSheet:(UIActionSheet *)a clickedButtonAtIndex:(NSInteger)i { if (i < 0 || i > 2) return; style = (CTMapStyle)i; [[NSUserDefaults standardUserDefaults] setInteger:style forKey:@"ct_map_style"]; [self applyStyle]; }
 - (void)applyStyle { map.style = style; scroll.backgroundColor = style == CTStyleNight ? [UIColor colorWithWhite:0.04 alpha:1] : style == CTStyleSatellite ? [UIColor colorWithWhite:0.2 alpha:1] : [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1]; self.view.backgroundColor = scroll.backgroundColor; credit.text = style != CTStyleSatellite ? @"Pinch to zoom, tap a station  ·  Map data © OpenStreetMap contributors" : mode == CTMapMuni ? @"Pinch to zoom, tap a station  ·  Imagery USGS National Map, lines © OpenStreetMap contributors" : @"Imagery Sentinel-2 cloudless 2016 by EOX, CC BY 4.0  ·  lines © OpenStreetMap contributors"; }
 - (void)dealloc { [scroll release]; [map release]; [seg release]; [credit release]; [super dealloc]; }
+- (void)viewDidUnload { [super viewDidUnload]; [map release]; map = nil; [scroll release]; scroll = nil; [seg release]; seg = nil; [credit release]; credit = nil; }   // a memory warning on another tab frees the map's bitmap (up to 15 MB at 3x); loadView builds a fresh one
 - (void)loadView {
     UIView *root = [[[UIView alloc] initWithFrame:[[UIScreen mainScreen] applicationFrame]] autorelease]; root.backgroundColor = [UIColor colorWithRed:0.60 green:0.70 blue:0.80 alpha:1];
     scroll = [[UIScrollView alloc] initWithFrame:root.bounds]; scroll.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight; scroll.backgroundColor = root.backgroundColor;
@@ -203,9 +204,9 @@ static void loadGeo(void) {
     scroll.zoomScale = 1; scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 3; scroll.contentSize = map.bounds.size; [scroll addSubview:map]; [self center];
     [map setOnPick:^(NSInteger i) { [self pick:i]; }]; [self applyStyle];
 }
-- (void)center {   // keep a small map centered in the scroll view
+- (void)center {   // keep a small map centered in the scroll view. Moves it by center: setting the frame under the zoom transform rewrites the bounds, and a Redraw view then re-renders the whole map on every frame of a pinch
     CGSize b = scroll.bounds.size; CGRect f = map.frame;
-    f.origin.x = f.size.width < b.width ? (b.width - f.size.width) / 2 : 0; f.origin.y = f.size.height < b.height ? (b.height - f.size.height) / 2 : 0; map.frame = f;
+    f.origin.x = f.size.width < b.width ? (b.width - f.size.width) / 2 : 0; f.origin.y = f.size.height < b.height ? (b.height - f.size.height) / 2 : 0; map.center = CGPointMake(f.origin.x + f.size.width / 2, f.origin.y + f.size.height / 2);
 }
 - (void)applyScale:(CGFloat)s centeredOn:(CGPoint)c {   // c in 1x map units
     [map setScale:s]; scroll.zoomScale = 1; scroll.minimumZoomScale = 1 / map.scale; scroll.maximumZoomScale = 3 / map.scale; scroll.contentSize = map.bounds.size; [self center];
@@ -224,6 +225,7 @@ static void loadGeo(void) {
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)sv { return map; }
 - (void)scrollViewDidZoom:(UIScrollView *)sv { [self center]; }
 - (void)scrollViewDidEndZooming:(UIScrollView *)sv withView:(UIView *)v atScale:(float)z {   // bake the pinch into a sharp re-render
+    if (fabsf(z - 1) < 0.001f) return;   // bounced back to the scale it was drawn at (pinching past 1x or 3x): it is already sharp
     CGSize b = sv.bounds.size; CGPoint c = CGPointMake((sv.contentOffset.x + b.width / 2) / (map.scale * z), (sv.contentOffset.y + b.height / 2) / (map.scale * z));
     [self applyScale:map.scale * z centeredOn:c];
 }
