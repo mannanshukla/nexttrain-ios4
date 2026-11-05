@@ -1,6 +1,6 @@
 # Next Train
 
-Caltrain, BART and Muni for iPod touch 4. Bundled Caltrain timetable, live times from 511 and BART, a trip planner you can type a sentence into, a vector map of the Bay with the Caltrain, BART and Muni Metro lines, and a Laya verdict on whether to run for it.
+Caltrain, BART and Muni for iPod touch 4. Bundled Caltrain timetable, live times from 511 and BART, a trip planner you describe a trip to (Caltrain and BART, changing at Millbrae), a vector map of the Bay with the Caltrain, BART and Muni Metro lines, and an egg timer that rings when it's time to walk to the platform and again a minute before your stop.
 
 ## Layout
 
@@ -10,7 +10,10 @@ Caltrain, BART and Muni for iPod touch 4. Bundled Caltrain timetable, live times
 - `src/CTMap` draws all of that in one view that re-renders sharp at the end of each pinch (1x to 3x); tapping a station pushes its board. Three styles: Standard (the old tile palette), Satellite (`res/sat-*.jpg`: Caltrain and BART from Sentinel-2 cloudless 2016 by EOX, s2maps.eu, CC BY 4.0, contains modified Copernicus Sentinel data 2016, built by `tools/fetch_s2.py`; Muni from the USGS National Map, public domain, `tools/fetch_imagery.sh`) and Night.
 - `res/Settings.bundle` puts the OpenRelay key, 511 token and map style in the Settings app.
 - `res/bart.json` is the BART station list, `res/muni_stops.json` the Muni stop names from 511.
-- `src/CTData` is the timetable engine, `CTLive` the 511 client, `CTAgencies` the BART and Muni clients, `CTAI` the OpenRelay and Laya calls.
+- `src/CTData` is the timetable engine, `CTLive` the 511 client, `CTAgencies` the BART and Muni clients.
+- `src/CTPlan`: "Just say it". The OpenRelay model only picks the route (stations, systems, day, time); `CTRoute` fills every time from the bundled timetable and api.bart.gov and chains the legs with a transfer buffer.
+- `src/CTTimer`: the timer. The Timer button on the Caltrain board opens it: it picks the train you're on (the one that just left your station, or the next) and lists the stops ahead with minutes to each; one tap sets it. The screen is a wind-up kitchen egg timer drawn in Core Graphics: the top half carries the minutes round its seam and turns back toward the pointer, ticking (`res/tick.caf`, `tools/tick.py`), and rocks on its base when it rings. Each ring is a `UILocalNotification` with `res/ring.caf` (made by `tools/ring.py`), so it goes off with the app suspended; while the app is open it follows the train on 511 and moves the rings. Muni has no trip times, so a Muni prediction opens a timer you dial yourself.
+- Test hook: `ct_test_timer` (seconds) in the app's defaults starts a timer at launch.
 - Real-time needs a free token from 511.org; 60 requests per hour. BART needs nothing.
 
 A fan project, not affiliated with Caltrain, BART, SFMTA or MTC. The agency marks identify the services.

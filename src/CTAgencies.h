@@ -5,7 +5,11 @@
 + (NSInteger)stationIndexForAbbr:(NSString *)abbr;
 + (NSArray *)departuresAt:(NSString *)abbr error:(NSString **)err;   // [{dest, abbr, minutes (NSNumber, 0 = leaving), platform, direction, length, hex, delay}] sorted by minutes
 + (NSString *)advisoriesWithError:(NSString **)err;      // joined text or "" when none
-+ (NSArray *)tripsFrom:(NSString *)a to:(NSString *)b time:(NSString *)t error:(NSString **)err;   // [{dep, arr, mins, fare, legs:[{line, head, from, to, dep, arr}]}]
++ (NSArray *)tripsFrom:(NSString *)a to:(NSString *)b time:(NSString *)t error:(NSString **)err;   // [{dep, arr, mins, fare, depAt, arrAt, legs:[{line, head, from, to, dep, arr, depAt, arrAt}]}]; depAt/arrAt are seconds since 1970
+// Same, for a given moment: departing at or after t, or (arriveBy) arriving by t. Sorted by departure.
++ (NSArray *)tripsFrom:(NSString *)a to:(NSString *)b at:(NSTimeInterval)t arriveBy:(BOOL)by error:(NSString **)err;
++ (NSInteger)stationNamed:(NSString *)q;                 // fuzzy over names and abbreviations, -1 if none
++ (NSString *)nameForAbbr:(NSString *)abbr;
 + (UIImage *)squareForHex:(NSString *)hex;
 + (NSString *)homeStation; + (void)setHomeStation:(NSString *)a;
 @end

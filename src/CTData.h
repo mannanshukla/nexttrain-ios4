@@ -8,6 +8,9 @@
 + (NSString *)dateKey:(NSDate *)d;     // yyyyMMdd
 + (NSInteger)minutesNow;               // minutes since local midnight
 + (NSString *)fmtMin:(NSInteger)m;     // "5:32 PM", wraps past midnight
++ (NSTimeInterval)midnightPlus:(NSInteger)days;          // local midnight `days` from today, seconds since 1970
++ (NSTimeInterval)midnightOf:(NSTimeInterval)t;
++ (NSString *)fmtTime:(NSTimeInterval)t;                 // "5:32 PM" for a moment
 + (NSSet *)activeServicesOn:(NSDate *)date;
 // Departures from station s heading dir (0 north, 1 south) on date at/after minute m. Items: {trip, dep (NSNumber), idx (NSNumber)}
 + (NSArray *)departuresFrom:(NSInteger)s dir:(NSInteger)dir date:(NSDate *)date after:(NSInteger)m;
@@ -22,4 +25,5 @@
 + (NSInteger)homeStation; + (void)setHomeStation:(NSInteger)s;
 + (NSInteger)homeDir; + (void)setHomeDir:(NSInteger)d;
 + (NSInteger)walkMinutes; + (void)setWalkMinutes:(NSInteger)m;   // how far you usually are from the platform
++ (NSInteger)leadMinutes;              // how long before your stop the timer rings
 @end

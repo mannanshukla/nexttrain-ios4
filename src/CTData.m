@@ -24,6 +24,17 @@ static NSDictionary *gFeed = nil; static NSMutableDictionary *gBadges = nil;
 + (NSString *)dateKey:(NSDate *)d { static NSDateFormatter *f = nil; if (!f) { f = [[NSDateFormatter alloc] init]; [f setDateFormat:@"yyyyMMdd"]; } return [f stringFromDate:d]; }
 + (NSInteger)minutesNow { NSDateComponents *c = [[NSCalendar currentCalendar] components:NSHourCalendarUnit | NSMinuteCalendarUnit fromDate:[NSDate date]]; return [c hour] * 60 + [c minute]; }
 + (NSString *)fmtMin:(NSInteger)m { m = ((m % 1440) + 1440) % 1440; NSInteger h = m / 60; return [NSString stringWithFormat:@"%ld:%02ld %@", (long)(h % 12 == 0 ? 12 : h % 12), (long)(m % 60), h < 12 ? @"AM" : @"PM"]; }
++ (NSTimeInterval)midnightOf:(NSTimeInterval)t {
+    NSCalendar *cal = [NSCalendar currentCalendar];
+    NSDateComponents *c = [cal components:NSYearCalendarUnit | NSMonthCalendarUnit | NSDayCalendarUnit fromDate:[NSDate dateWithTimeIntervalSince1970:t]];
+    return [[cal dateFromComponents:c] timeIntervalSince1970];
+}
++ (NSTimeInterval)midnightPlus:(NSInteger)days {
+    NSCalendar *cal = [NSCalendar currentCalendar];
+    NSDateComponents *c = [cal components:NSYearCalendarUnit | NSMonthCalendarUnit | NSDayCalendarUnit fromDate:[NSDate date]]; [c setDay:[c day] + days];
+    return [[cal dateFromComponents:c] timeIntervalSince1970];
+}
++ (NSString *)fmtTime:(NSTimeInterval)t { static NSDateFormatter *f = nil; if (!f) { f = [[NSDateFormatter alloc] init]; [f setLocale:[[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease]]; [f setDateFormat:@"h:mm a"]; } return [f stringFromDate:[NSDate dateWithTimeIntervalSince1970:t]]; }
 + (NSSet *)activeServicesOn:(NSDate *)date {
     NSString *key = [self dateKey:date];
     NSInteger wd = ([[[NSCalendar currentCalendar] components:NSWeekdayCalendarUnit fromDate:date] weekday] + 5) % 7;   // Mon = 0
@@ -114,6 +125,7 @@ static NSDictionary *gFeed = nil; static NSMutableDictionary *gBadges = nil;
 + (void)setHomeStation:(NSInteger)s { [[self d] setInteger:s forKey:@"ct_home"]; [[self d] synchronize]; }
 + (NSInteger)walkMinutes { id v = [[self d] objectForKey:@"ct_walk"]; return v ? [v integerValue] : 4; }
 + (void)setWalkMinutes:(NSInteger)m { [[self d] setInteger:m forKey:@"ct_walk"]; [[self d] synchronize]; }
++ (NSInteger)leadMinutes { id v = [[self d] objectForKey:@"ct_lead"]; return v ? MAX(1, [v integerValue]) : 1; }
 + (NSInteger)homeDir { return [[self d] integerForKey:@"ct_dir"]; }
 + (void)setHomeDir:(NSInteger)dir { [[self d] setInteger:dir forKey:@"ct_dir"]; [[self d] synchronize]; }
 @end

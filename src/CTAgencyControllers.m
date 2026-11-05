@@ -3,6 +3,8 @@
 #import "CTAgencies.h"
 #import "CTData.h"
 #import "CTViews.h"
+#import "CTTimer.h"
+#import "CTPlan.h"
 #import <QuartzCore/QuartzCore.h>
 
 
@@ -133,7 +135,7 @@ static UILabel *footer(UITableView *tv) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return s == 0 ? 3 : MAX(1, (NSInteger)[trips count]); }
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s { return s == 1 ? [NSString stringWithFormat:@"%@ to %@", [self name:from], [self name:to]] : nil; }
-- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s { return s == 1 ? (status ?: ([trips count] ? @"Clipper fare shown. Trips with a transfer list both legs." : nil)) : nil; }
+- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s { return s == 1 ? (status ?: ([trips count] ? @"Clipper fare shown. Trips with a transfer list both legs. Tap one to set a timer." : nil)) : nil; }
 - (CGFloat)tableView:(UITableView *)tv heightForRowAtIndexPath:(NSIndexPath *)ip { return ip.section == 1 && [trips count] ? 60 : 44; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     if (ip.section == 0) {
@@ -142,15 +144,22 @@ static UILabel *footer(UITableView *tv) {
     }
     UITableViewCell *c = [[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil] autorelease]; c.selectionStyle = UITableViewCellSelectionStyleNone; c.detailTextLabel.textColor = [UIColor colorWithWhite:0.45 alpha:1]; c.textLabel.font = [UIFont boldSystemFontOfSize:17];
     if (![trips count]) { c.textLabel.text = busy ? @"Asking BART..." : @"No trips"; c.textLabel.textColor = [UIColor grayColor]; return c; }
+    c.selectionStyle = UITableViewCellSelectionStyleBlue;
     NSDictionary *t = [trips objectAtIndex:ip.row]; NSArray *legs = [t objectForKey:@"legs"];
     c.textLabel.text = [NSString stringWithFormat:@"%@  →  %@", [t objectForKey:@"dep"], [t objectForKey:@"arr"]];
     NSMutableArray *parts = [NSMutableArray array]; for (NSDictionary *l in legs) [parts addObject:[l objectForKey:@"head"]];
-    c.detailTextLabel.text = [NSString stringWithFormat:@"%@ min · $%@ · %@%@", [t objectForKey:@"mins"], [t objectForKey:@"fare"], [legs count] > 1 ? [NSString stringWithFormat:@"change at %@ · ", [[legs objectAtIndex:0] objectForKey:@"to"]] : @"", [parts componentsJoinedByString:@" then "]];
+    c.detailTextLabel.text = [NSString stringWithFormat:@"%@ min · $%@ · %@%@", [t objectForKey:@"mins"], [t objectForKey:@"fare"], [legs count] > 1 ? [NSString stringWithFormat:@"change at %@ · ", [CTBart nameForAbbr:[[legs objectAtIndex:0] objectForKey:@"to"]]] : @"", [parts componentsJoinedByString:@" then "]];
     c.detailTextLabel.numberOfLines = 2; c.detailTextLabel.font = [UIFont systemFontOfSize:12];
     return c;
 }
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
-    [tv deselectRowAtIndexPath:ip animated:YES]; if (ip.section != 0) return;
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section == 1 && ip.row < (NSInteger)[trips count]) {   // ring before the change and the last stop
+        NSMutableArray *segs = [NSMutableArray array]; for (NSDictionary *l in [[trips objectAtIndex:ip.row] objectForKey:@"legs"]) if ([[l objectForKey:@"arrAt"] doubleValue] > 0) [segs addObject:[CTRoute bartLeg:l]];
+        if ([segs count]) [CTTimer offerSegs:segs title:[NSString stringWithFormat:@"BART %@ to %@", [self name:from], [self name:to]]];
+        return;
+    }
+    if (ip.section != 0) return;
     NSMutableArray *rows = [NSMutableArray array]; for (NSDictionary *s in [CTBart stations]) [rows addObject:[s objectForKey:@"name"]];
     UIView *host = self.tabBarController.view;
     if (ip.row == 0) [[CTDrum shared] showInView:host title:@"From" rows:rows selected:from onChange:^(NSInteger r) { from = r; [tv reloadRowsAtIndexPaths:[NSArray arrayWithObject:ip] withRowAnimation:UITableViewRowAnimationNone]; } onDone:^{ [self search]; }];
@@ -221,11 +230,16 @@ static UILabel *footer(UITableView *tv) {
     NSDictionary *d = [p objectAtIndex:ip.row];
     c.textLabel.text = [NSString stringWithFormat:@"%@  %@", minsText([[d objectForKey:@"minutes"] integerValue]), [d objectForKey:@"route"]];
     c.detailTextLabel.text = [NSString stringWithFormat:@"to %@", [d objectForKey:@"dest"]];
-    c.imageView.image = [CTData badgeText:[d objectForKey:@"route"] color:muniRed()];
+    c.imageView.image = [CTData badgeText:[d objectForKey:@"route"] color:muniRed()]; c.selectionStyle = UITableViewCellSelectionStyleGray;
     return c;
 }
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
-    [tv deselectRowAtIndexPath:ip animated:YES]; if (ip.section != 0) return;
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section > 0) {   // Muni has no trip times: a timer you dial yourself
+        NSArray *p = [stops count] ? [preds objectForKey:[stops objectAtIndex:ip.section - 1]] : nil;
+        if (ip.row < (NSInteger)[p count]) { NSDictionary *d = [p objectAtIndex:ip.row]; [CTTimer showManual:[NSString stringWithFormat:@"%@ to %@", [d objectForKey:@"route"], [d objectForKey:@"dest"]]]; }
+        return;
+    }
     CTMetroLineViewController *v = [[CTMetroLineViewController alloc] initWithLine:[[CTMapView metroLines] objectAtIndex:ip.row]]; [self.navigationController pushViewController:v animated:YES]; [v release];
 }
 - (BOOL)tableView:(UITableView *)tv canEditRowAtIndexPath:(NSIndexPath *)ip { return ip.section > 0 && [stops count] > 0; }
@@ -318,8 +332,12 @@ static UILabel *footer(UITableView *tv) {
     c.textLabel.text = [NSString stringWithFormat:@"%@  %@", minsText([[d objectForKey:@"minutes"] integerValue]), route];
     c.detailTextLabel.text = [NSString stringWithFormat:@"to %@", [d objectForKey:@"dest"]];
     NSString *hex = nil; for (NSDictionary *l in [CTMapView metroLines]) if ([[l objectForKey:@"id"] isEqualToString:route]) hex = [l objectForKey:@"color"];
-    c.imageView.image = [CTData badgeText:route color:hex ? [CTMapView colorForHex:hex] : muniRed()];
+    c.imageView.image = [CTData badgeText:route color:hex ? [CTMapView colorForHex:hex] : muniRed()]; c.selectionStyle = UITableViewCellSelectionStyleGray;
     return c;
+}
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES]; if (ip.row >= (NSInteger)[preds count]) return;
+    NSDictionary *d = [preds objectAtIndex:ip.row]; [CTTimer showManual:[NSString stringWithFormat:@"%@ to %@", [d objectForKey:@"route"], [d objectForKey:@"dest"]]];
 }
 @end
 

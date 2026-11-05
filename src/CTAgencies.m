@@ -57,19 +57,56 @@ static NSArray *asArray(id v) { return [v isKindOfClass:[NSArray class]] ? v : v
     for (NSDictionary *b in asArray([[obj objectForKey:@"root"] objectForKey:@"bsa"])) { NSString *t = cdata([b objectForKey:@"description"]); if ([t length] && [t rangeOfString:@"No delays reported"].location == NSNotFound) [lines addObject:t]; }
     return [lines componentsJoinedByString:@"\n\n"];
 }
-+ (NSArray *)tripsFrom:(NSString *)a to:(NSString *)b time:(NSString *)t error:(NSString **)err {
-    NSString *tm = t ? [NSString stringWithFormat:@"&time=%@", [t stringByReplacingOccurrencesOfString:@" " withString:@""]] : @"";
-    id obj = getJSON([NSString stringWithFormat:@"https://api.bart.gov/api/sched.aspx?cmd=depart&orig=%@&dest=%@%@&b=0&a=4&key=%@&json=y", a, b, tm, BART_KEY], err);
+static NSTimeInterval bartTime(NSString *date, NSString *hm) {   // "11/05/2026 " + "05:31 PM" -> seconds since 1970, 0 if unreadable
+    static NSDateFormatter *f = nil;
+    if (!f) { f = [[NSDateFormatter alloc] init]; [f setLocale:[[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease]]; [f setDateFormat:@"MM/dd/yyyy hh:mm a"]; [f setTimeZone:[NSTimeZone timeZoneWithName:@"America/Los_Angeles"]]; }
+    if (![date isKindOfClass:[NSString class]] || ![hm isKindOfClass:[NSString class]]) return 0;
+    NSCharacterSet *ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    NSDate *d = [f dateFromString:[NSString stringWithFormat:@"%@ %@", [date stringByTrimmingCharactersInSet:ws], [hm stringByTrimmingCharactersInSet:ws]]];
+    return d ? [d timeIntervalSince1970] : 0;
+}
+static NSArray *bartTrips(NSString *query, NSString **err) {
+    id obj = getJSON([NSString stringWithFormat:@"https://api.bart.gov/api/sched.aspx?%@&key=%@&json=y", query, BART_KEY], err);
     if (!obj) return nil;
     NSMutableArray *out = [NSMutableArray array];
     for (NSDictionary *tr in asArray([[[[obj objectForKey:@"root"] objectForKey:@"schedule"] objectForKey:@"request"] objectForKey:@"trip"])) {
         NSMutableArray *legs = [NSMutableArray array];
-        for (NSDictionary *l in asArray([tr objectForKey:@"leg"])) [legs addObject:[NSDictionary dictionaryWithObjectsAndKeys:[l objectForKey:@"@line"] ?: @"", @"line", [l objectForKey:@"@trainHeadStation"] ?: @"", @"head", [l objectForKey:@"@origin"] ?: @"", @"from", [l objectForKey:@"@destination"] ?: @"", @"to", [l objectForKey:@"@origTimeMin"] ?: @"", @"dep", [l objectForKey:@"@destTimeMin"] ?: @"", @"arr", nil]];
-        [out addObject:[NSDictionary dictionaryWithObjectsAndKeys:[tr objectForKey:@"@origTimeMin"] ?: @"", @"dep", [tr objectForKey:@"@destTimeMin"] ?: @"", @"arr", [NSNumber numberWithInteger:[[tr objectForKey:@"@tripTime"] integerValue]], @"mins", [tr objectForKey:@"@fare"] ?: @"", @"fare", legs, @"legs", nil]];
+        for (NSDictionary *l in asArray([tr objectForKey:@"leg"])) [legs addObject:[NSDictionary dictionaryWithObjectsAndKeys:[l objectForKey:@"@line"] ?: @"", @"line", [l objectForKey:@"@trainHeadStation"] ?: @"", @"head", [l objectForKey:@"@origin"] ?: @"", @"from", [l objectForKey:@"@destination"] ?: @"", @"to", [l objectForKey:@"@origTimeMin"] ?: @"", @"dep", [l objectForKey:@"@destTimeMin"] ?: @"", @"arr",
+            [NSNumber numberWithDouble:bartTime([l objectForKey:@"@origTimeDate"], [l objectForKey:@"@origTimeMin"])], @"depAt", [NSNumber numberWithDouble:bartTime([l objectForKey:@"@destTimeDate"], [l objectForKey:@"@destTimeMin"])], @"arrAt", nil]];
+        [out addObject:[NSDictionary dictionaryWithObjectsAndKeys:[tr objectForKey:@"@origTimeMin"] ?: @"", @"dep", [tr objectForKey:@"@destTimeMin"] ?: @"", @"arr", [NSNumber numberWithInteger:[[tr objectForKey:@"@tripTime"] integerValue]], @"mins", [tr objectForKey:@"@fare"] ?: @"", @"fare", legs, @"legs",
+            [NSNumber numberWithDouble:bartTime([tr objectForKey:@"@origTimeDate"], [tr objectForKey:@"@origTimeMin"])], @"depAt", [NSNumber numberWithDouble:bartTime([tr objectForKey:@"@destTimeDate"], [tr objectForKey:@"@destTimeMin"])], @"arrAt", nil]];
     }
     if (![out count] && err) *err = @"BART returned no trips.";
     return out;
 }
++ (NSArray *)tripsFrom:(NSString *)a to:(NSString *)b time:(NSString *)t error:(NSString **)err {
+    NSString *tm = t ? [NSString stringWithFormat:@"&time=%@", [t stringByReplacingOccurrencesOfString:@" " withString:@""]] : @"";
+    return bartTrips([NSString stringWithFormat:@"cmd=depart&orig=%@&dest=%@%@&b=0&a=4", a, b, tm], err);
+}
++ (NSArray *)tripsFrom:(NSString *)a to:(NSString *)b at:(NSTimeInterval)t arriveBy:(BOOL)by error:(NSString **)err {
+    static NSDateFormatter *df = nil, *tf = nil;
+    if (!df) { NSLocale *posix = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease]; NSTimeZone *pt = [NSTimeZone timeZoneWithName:@"America/Los_Angeles"];
+        df = [[NSDateFormatter alloc] init]; [df setLocale:posix]; [df setTimeZone:pt]; [df setDateFormat:@"MM/dd/yyyy"];
+        tf = [[NSDateFormatter alloc] init]; [tf setLocale:posix]; [tf setTimeZone:pt]; [tf setDateFormat:@"h:mma"]; }
+    NSDate *d = [NSDate dateWithTimeIntervalSince1970:t];
+    NSArray *r = bartTrips([NSString stringWithFormat:@"cmd=%@&orig=%@&dest=%@&date=%@&time=%@&%@", by ? @"arrive" : @"depart", a, b, [df stringFromDate:d], [[tf stringFromDate:d] lowercaseString], by ? @"b=4&a=4" : @"b=0&a=4"], err);   // arrive mode ignores a=0 and gives only about three trips before t; ask for both sides and filter
+    NSMutableArray *out = [NSMutableArray array];   // keep only the trips on the asked-for side of t
+    for (NSDictionary *x in r) { double dep = [[x objectForKey:@"depAt"] doubleValue], arr = [[x objectForKey:@"arrAt"] doubleValue]; if (dep <= 0 || arr <= 0) continue; if (by ? arr <= t + 59 : dep >= t - 59) [out addObject:x]; }
+    [out sortUsingComparator:^NSComparisonResult(id x, id y) { double p = [[x objectForKey:@"depAt"] doubleValue], q = [[y objectForKey:@"depAt"] doubleValue]; return p < q ? NSOrderedAscending : p > q ? NSOrderedDescending : NSOrderedSame; }];
+    if (r && ![out count] && err) *err = @"BART returned no trips.";
+    return r ? out : nil;
+}
++ (NSInteger)stationNamed:(NSString *)q {
+    NSString *s = [[q lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]; if (![s length]) return -1;
+    NSDictionary *alias = [NSDictionary dictionaryWithObjectsAndKeys:@"SFIA", @"sfo", @"SFIA", @"the airport", @"OAKL", @"oak", @"POWL", @"powell", @"MONT", @"montgomery", @"CIVC", @"civic center", @"DBRK", @"berkeley", @"16TH", @"the mission", @"12TH", @"oakland", @"MLBR", @"millbrae", nil];
+    NSArray *st = [self stations];
+    if ([alias objectForKey:s]) return [self stationIndexForAbbr:[alias objectForKey:s]];
+    for (NSUInteger i = 0; i < [st count]; i++) if ([[[[st objectAtIndex:i] objectForKey:@"abbr"] lowercaseString] isEqualToString:s] || [[[[st objectAtIndex:i] objectForKey:@"name"] lowercaseString] isEqualToString:s]) return i;
+    for (NSUInteger i = 0; i < [st count]; i++) if ([[[[st objectAtIndex:i] objectForKey:@"name"] lowercaseString] hasPrefix:s]) return i;
+    for (NSUInteger i = 0; i < [st count]; i++) if ([[[[st objectAtIndex:i] objectForKey:@"name"] lowercaseString] rangeOfString:s].location != NSNotFound) return i;
+    return -1;
+}
++ (NSString *)nameForAbbr:(NSString *)abbr { for (NSDictionary *s in [self stations]) if ([[s objectForKey:@"abbr"] isEqualToString:abbr]) return [s objectForKey:@"name"]; return abbr; }
 + (UIImage *)squareForHex:(NSString *)hex {
     if (!gSquares) gSquares = [[NSMutableDictionary alloc] init];
     if ([gSquares objectForKey:hex]) return [gSquares objectForKey:hex];

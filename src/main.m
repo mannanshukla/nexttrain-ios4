@@ -2,6 +2,7 @@
 #import "CTControllers.h"
 #import "CTAgencyControllers.h"
 #import "CTMap.h"
+#import "CTTimer.h"
 #import <QuartzCore/QuartzCore.h>
 @interface CTAppDelegate : NSObject <UIApplicationDelegate> { UIWindow *window; UITabBarController *tabs; }
 @end
@@ -18,8 +19,19 @@
     tabs.viewControllers = [NSArray arrayWithObjects:[self wrap:d], [self wrap:b], [self wrap:mu], [self wrap:t], [self wrap:l], nil];
     tabs.selectedIndex = [[NSUserDefaults standardUserDefaults] integerForKey:@"ct_tab"];
     [window addSubview:tabs.view]; [window makeKeyAndVisible];
+    [CTTimer setHost:tabs];
+    if ([opts objectForKey:UIApplicationLaunchOptionsLocalNotificationKey]) [self performSelector:@selector(launchedByRing) withObject:nil afterDelay:0.6];   // the bell already played; just show what it was for
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults]; NSInteger test = [ud integerForKey:@"ct_test_timer"];
+    if (test > 0) { [ud removeObjectForKey:@"ct_test_timer"]; [ud synchronize]; [self performSelector:@selector(testTimer:) withObject:[NSNumber numberWithInteger:test] afterDelay:1]; }
     return YES;
 }
+- (void)launchedByRing { [CTTimer rang:NO]; }
+- (void)testTimer:(NSNumber *)secs {   // defaults write com.mshukla.nexttrain ct_test_timer -int 20
+    NSDictionary *r = [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970] + [secs doubleValue]], @"at", @"Test stop is next", @"say", @"Get your stuff.", @"sub", @"manual", @"kind", nil];
+    [CTTimer startTitle:@"Test" rings:[NSArray arrayWithObject:r] show:YES];
+}
+- (void)application:(UIApplication *)app didReceiveLocalNotification:(UILocalNotification *)n { [CTTimer rang:[app applicationState] == UIApplicationStateActive]; }   // open: ring here; tapped from outside: the bell already played
+- (void)applicationDidBecomeActive:(UIApplication *)app { [CTTimer performSelector:@selector(resume) withObject:nil afterDelay:0.3]; }
 - (void)applicationWillTerminate:(UIApplication *)app { [[NSUserDefaults standardUserDefaults] setInteger:tabs.selectedIndex forKey:@"ct_tab"]; [[NSUserDefaults standardUserDefaults] synchronize]; }
 - (void)dealloc { [tabs release]; [window release]; [super dealloc]; }
 @end

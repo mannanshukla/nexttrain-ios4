@@ -6,7 +6,7 @@
 	<array>
 		<dict>
 			<key>FooterText</key>
-			<string>The OpenRelay key powers the trip planner's sentence parsing and the run-for-it verdict. The 511 token (free at 511.org/open-data/token) gives live Caltrain and Muni times.</string>
+			<string>The OpenRelay key powers "Just say it" in the Trip tab. The 511 token (free at 511.org/open-data/token) gives live Caltrain and Muni times, and lets the timer follow a late train.</string>
 			<key>Title</key>
 			<string>Keys</string>
 			<key>Type</key>
@@ -50,9 +50,9 @@
 		</dict>
 		<dict>
 			<key>FooterText</key>
-			<string>Walk time feeds "Run for it?": tap a train leaving in ten minutes or less and Laya decides. Your home station is set from the station button on the board.</string>
+			<string>Timer, top left of the board: tap the stop you're getting off at and it rings before you get there. Tap a train to be rung when it's time to walk to the platform. Your home station is set from the station button on the board.</string>
 			<key>Title</key>
-			<string>Board</string>
+			<string>Board and timer</string>
 			<key>Type</key>
 			<string>PSGroupSpecifier</string>
 		</dict>
@@ -86,6 +86,30 @@
 				<integer>7</integer>
 				<integer>10</integer>
 				<integer>15</integer>
+			</array>
+		</dict>
+		<dict>
+			<key>DefaultValue</key>
+			<integer>1</integer>
+			<key>Key</key>
+			<string>ct_lead</string>
+			<key>Title</key>
+			<string>Ring before my stop</string>
+			<key>Titles</key>
+			<array>
+				<string>1 minute</string>
+				<string>2 minutes</string>
+				<string>3 minutes</string>
+				<string>5 minutes</string>
+			</array>
+			<key>Type</key>
+			<string>PSMultiValueSpecifier</string>
+			<key>Values</key>
+			<array>
+				<integer>1</integer>
+				<integer>2</integer>
+				<integer>3</integer>
+				<integer>5</integer>
 			</array>
 		</dict>
 		<dict>
